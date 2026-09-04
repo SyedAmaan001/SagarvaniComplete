@@ -1,233 +1,820 @@
-# 🌊 SAGARVANI — ORCA Marine Intelligence & Decision Support System
+# 🌊 Sagarvani — ORCA Marine Intelligence Platform
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-009688.svg?style=flat&logo=fastapi)](https://fastapi.tiangolo.com)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B.svg?style=flat&logo=streamlit)](https://streamlit.io)
-[![Gemini](https://img.shields.io/badge/Google_Gemini-Multi--Key_Rotation-8E75B2.svg)](https://deepmind.google/technologies/gemini/)
-[![Sarvam AI](https://img.shields.io/badge/Sarvam_AI-Bilingual_STT_&_Translate-FF6F00.svg)](https://www.sarvam.ai/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+> **Conversational Marine Decision Intelligence for Safer and Smarter Coastal Operations**
 
-**ORCA (Ocean Risk & Coastal Analytics)** is an AI-powered, multi-agent marine intelligence and decision-support system developed for **SAGARVANI** (SIH26176). It integrates real-time oceanographic and meteorological telemetry, satellite earth observation datasets (MOSDAC, Copernicus CMEMS, Bhuvan NRSC), and autonomous AI agents to deliver hyper-localized maritime safety scores, navigation routes, potential fishing zone (PFZ) insights, and multi-lingual voice/text advisories for coastal communities, fishermen, and maritime authorities.
-
----
-
-## 🚀 Key Features
-
-### 1. 🤖 Multi-Agent Orchestration Pipeline
-A coordinated multi-agent system built with domain-specialized agents:
-- **Planner Agent**: Deconstructs user intents into actionable oceanographic workflows.
-- **Weather Agent**: Fetches real-time wind speed, gusts, atmospheric pressure, and precipitation.
-- **Marine Agent**: Analyzes wave heights, swell direction, sea surface temperature (SST), and ocean currents.
-- **GIS & Spatial Reasoning Agent**: Geofences Marine Protected Areas (MPAs), defense firing ranges, and international maritime boundaries.
-- **Ocean Analytics Agent**: Synthesizes INCOIS Potential Fishing Zones (PFZ) using Chlorophyll-a and SST fronts.
-- **Risk Engine Agent**: Calculates a composite 0–100 Marine Risk Score using multi-parameter weighted algorithms.
-- **Visualizer Agent**: Formats data for GIS maps, GeoJSON layers, and dynamic dashboard charts.
-- **Validator Agent**: Applies cross-validation checks and safety gates before advisory dispatch.
-- **Conversation & Interpreter Agent**: Generates contextual natural language responses in English and regional languages (Kannada, etc.) powered by Google Gemini and Sarvam AI.
-
-### 2. ⚡ 10-Step Autonomous Decision Pipeline
-Executes end-to-end maritime analysis from raw GPS coordinates:
-1. Intent Parsing & Geo-coordinate normalization
-2. Authoritative Telemetry Ingestion (Gateway layer)
-3. Meteorological & Wave Hazard Evaluation
-4. Cyclone Threat & Trajectory Impact Modeling
-5. INCOIS PFZ & Chlorophyll Target Identification
-6. Geofence & Restricted Zone Validation
-7. Multi-Objective Safe Route Planning
-8. Composite Risk Index Calculation (0–100)
-9. Automated High-Risk Alert Gating (SMS / WhatsApp via Twilio)
-10. Multilingual Advisory Synthesis & Audio Generation
-
-### 3. 📡 Multi-Source Earth Observation & Ingestion
-- **MOSDAC / ISRO**: Altimetry & Scatterometer `.nc` (NetCDF) ocean data parsers.
-- **Copernicus Marine Service (CMEMS)**: Global ocean physics analysis and forecasts.
-- **IMD (India Meteorological Department)**: RSMC cyclone tracking, sea area bulletins, and coastal storm warnings.
-- **Bhuvan NRSC**: Coastal Land Use / Land Cover (LULC) vulnerability layers.
-- **Open-Meteo**: High-resolution marine and atmospheric forecasts.
-
-### 4. 🚨 Multi-Channel Alert & Broadcast Engine
-- Automated Twilio integration for SMS and WhatsApp broadcasts to registered coastal vessels.
-- Emergency triggers for high-risk conditions (Risk Score > 75 or active cyclone vicinity).
-
-### 5. 🛰️ Streamlit Satellite Data Interpreter
-- Dedicated interactive exploration dashboard for analyzing coastal NetCDF files, SAR imagery, wind vectors, and oceanographic layers.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688.svg)](https://fastapi.tiangolo.com/)
+[![Redis](https://img.shields.io/badge/Redis-Durable%20State-red.svg)](https://redis.io/)
+[![Pytest](https://img.shields.io/badge/Tests-44%20Passing-brightgreen.svg)](https://pytest.org/)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)]()
 
 ---
 
-## 🏛️ System Architecture
+## 🌊 Overview
 
-```
-                                  ┌────────────────────────┐
-                                  │   Frontend Dashboard   │
-                                  │ (Leaflet GIS / Web UI) │
-                                  └───────────┬────────────┘
-                                              │ HTTP / JSON
-                                              ▼
-                                  ┌────────────────────────┐
-                                  │   FastAPI Core Engine  │
-                                  │       (main.py)        │
-                                  └───────────┬────────────┘
-                                              │
-                      ┌───────────────────────┴───────────────────────┐
-                      ▼                                               ▼
-         ┌────────────────────────┐                      ┌────────────────────────┐
-         │  Multi-Agent Pipeline  │                      │  Marine Data Gateway   │
-         │  - Planner             │                      │  - IMD RSMC Cyclones   │
-         │  - Weather & Marine    │                      │  - INCOIS PFZ Feed     │
-         │  - GIS / Geofencing    │                      │  - Copernicus CMEMS    │
-         │  - Risk Engine         │                      │  - MOSDAC NetCDF / SAR │
-         │  - Validator & Output  │                      │  - Open-Meteo Marine   │
-         └────────────┬───────────┘                      └────────────────────────┘
-                      │
-                      ▼
-         ┌────────────────────────┐
-         │  AI & Services Layer   │
-         │  - Gemini Multi-Key    │
-         │  - Sarvam AI (Voice)   │
-         │  - Twilio (SMS/WA)     │
-         └────────────────────────┘
-```
+**Sagarvani** is a conversational marine intelligence platform built around **ORCA — Marine Intelligence**.
+
+ORCA is designed to sit above existing marine, oceanographic, meteorological, satellite and geospatial data sources and transform fragmented information into a coordinated, explainable decision-support layer.
+
+Instead of simply displaying raw weather, ocean or GIS data, ORCA is designed to:
+
+1. Understand a user's natural-language request.
+2. Identify the location, time, activity, vessel and constraints.
+3. Plan the information required to answer the request.
+4. Retrieve information through specialized tools and agents.
+5. Normalize information from different sources.
+6. Apply deterministic safety and geofencing constraints.
+7. Rank feasible options.
+8. Verify data freshness, conflicts and provenance.
+9. Return an explainable recommendation.
+
+The core principle is:
+
+> **AI plans and explains. Deterministic systems enforce safety constraints.**
 
 ---
 
-## 📁 Repository Structure
+# 🎯 Problem
 
-```
-├── backend/
-│   ├── agents/                   # Multi-agent implementations (Orchestrator, Planner, Weather, etc.)
-│   ├── engine/                   # Core decision pipeline, Risk Engine, Safety Gate, Cyclone Tracker
-│   ├── gateway/                  # Marine Data Gateway & Telemetry Normalization
-│   ├── parsers/                  # NetCDF (.nc) and SAR parser modules
-│   ├── processors/               # IMD, Copernicus CMEMS, and Weather processors
-│   ├── services/                 # Twilio alert and notification services
-│   ├── utils/                    # Key rotation, geodesic and geospatial calculations
-│   ├── main.py                   # FastAPI application entrypoint & API endpoints
-│   ├── requirements.txt          # Python dependencies
-│   ├── start.bat                 # Windows start script
-│   ├── .env.example              # Environment variable configuration template
-│   └── .gitignore
-├── frontend/
-│   ├── index.html                # Maritime GIS Dashboard UI
-│   ├── style.css                 # Custom modern stylesheet
-│   └── app.js                    # Leaflet map integration, telemetry streams & API client
-├── Interpreter/
-│   ├── app.py                    # Streamlit Satellite & NetCDF Visualizer
-│   └── .gitignore
-├── MOSDAC/                       # Sample MOSDAC Coastal NetCDF datasets
-├── Bhuvan  NRSC – LULC 2024–25/  # Land Use / Land Cover documentation & guides
-├── docs/
-│   └── API_REFERENCE.md          # Comprehensive REST API specifications
-├── .gitignore                    # Global repository gitignore
-└── README.md                     # Project documentation
-```
+Marine information is fragmented across multiple systems.
+
+A fisherman or maritime operator may need to combine:
+
+- Weather forecasts
+- Wind and wave conditions
+- Ocean currents
+- Sea-surface temperature
+- Potential Fishing Zones
+- Cyclone warnings
+- Restricted areas
+- Geospatial boundaries
+- Vessel constraints
+- Route information
+
+These datasets may have different formats, update cycles, sources and reliability.
+
+The challenge is therefore not simply:
+
+> "Can we display marine data?"
+
+The real challenge is:
+
+> **Can we combine the right information for a particular location, time and user context and turn it into a safe, explainable decision?**
+
+Sagarvani/ORCA addresses this through a coordinated intelligence and decision layer.
 
 ---
 
-## ⚙️ Installation & Setup
+# 🚀 Vision
 
-### Prerequisites
-- **Python 3.10+**
-- **pip** package manager
-- **Git**
+ORCA is intended to support questions such as:
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/MallikarjunaDM/Sagarvani-backend-.git
-cd Sagarvani-backend-
-```
+```text
+Can I safely go fishing tomorrow morning?
 
-### 2. Configure Environment Variables
-Copy `.env.example` in the `backend/` directory to `.env`:
-```bash
-cp backend/.env.example backend/.env
-```
-Fill in your credentials inside `backend/.env`:
-- `GEMINI_API_KEY_1` to `GEMINI_API_KEY_6` or `GOOGLE_API_KEY`
-- `SARVAM_API_KEY` (for speech-to-text & translation)
-- `COPERNICUS_USERNAME` & `COPERNICUS_PASSWORD` (optional, for CMEMS toolbox)
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (optional, for alerts)
+Where is the nearest useful Potential Fishing Zone?
 
-### 3. Install Backend Dependencies
-```bash
-cd backend
+What are the sea conditions near me?
+
+Which fishing areas should I avoid?
+
+Find a productive area that is also safe and not restricted.
+
+What is the safest route to the selected area?
+
+The intended system combines marine conditions, weather, hazards, geospatial constraints and user context before producing a recommendation.
+
+🧠 Safe-First Decision Intelligence
+
+A key design principle of ORCA is:
+
+        Candidate Areas
+              │
+              ▼
+      ┌─────────────────┐
+      │ Safety / Hazard │
+      │     Gate        │
+      └────────┬────────┘
+               │
+       Remove unsafe /
+       restricted areas
+               │
+               ▼
+      ┌─────────────────┐
+      │ Multi-Objective │
+      │    Ranking      │
+      └────────┬────────┘
+               │
+               ▼
+      ┌─────────────────┐
+      │ Evidence &      │
+      │ Verification    │
+      └────────┬────────┘
+               │
+               ▼
+      ┌─────────────────┐
+      │ Recommendation  │
+      │ + Map + Reason  │
+      └─────────────────┘
+
+Safety constraints are not treated as another AI score.
+
+Unsafe or restricted options should be eliminated before productive options are ranked.
+
+🔄 ORCA Decision Flow
+
+The intended end-to-end workflow is:
+
+User Query
+    ↓
+Interpret
+    ↓
+Plan
+    ↓
+Retrieve
+    ↓
+Normalize
+    ↓
+Reason
+    ↓
+Apply Safety Constraints
+    ↓
+Rank
+    ↓
+Verify
+    ↓
+Respond
+1. Interpret
+
+Extract:
+
+User intent
+Location
+Time
+Activity
+Vessel information
+Constraints
+Language
+2. Plan
+
+The planner determines which information and tools are actually required.
+
+ORCA should avoid blindly calling every available data source.
+
+3. Retrieve
+
+Specialized agents/tools retrieve relevant marine, weather, hazard and geospatial information.
+
+4. Normalize
+
+Different external sources are converted into a common internal representation containing information such as:
+
+parameter
+value
+unit
+latitude
+longitude
+valid_time
+source
+observed_or_forecast
+quality
+5. Reason
+
+Marine, weather, spatial and contextual information is combined.
+
+6. Constrain
+
+Hard safety and geofence rules are applied.
+
+Examples include:
+
+Restricted areas
+Marine hazards
+Severe weather
+Cyclone conditions
+Unsafe sea state
+Route constraints
+7. Rank
+
+Only feasible options are ranked according to the user's objective.
+
+8. Verify
+
+The system checks:
+
+Data freshness
+Source provenance
+Conflicting results
+Confidence
+Missing critical information
+9. Respond
+
+The final decision package can contain:
+
+Recommendation
+Reasoning/evidence
+Map information
+Route
+Warnings
+Alternatives
+Source information
+🏗️ Current Architecture
+
+The current implementation is centered around a FastAPI backend with an orchestration service, gateway abstractions and durable Redis-backed state.
+
+                         ┌─────────────────────┐
+                         │       Client        │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │       FastAPI       │
+                         │      API Layer      │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ OrchestrationService│
+                         └──────────┬──────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+                    ▼               ▼               ▼
+              Interpreter       Planner         State
+               Gateway         Gateway          Manager
+                    │               │               │
+                    │               │               ▼
+                    │               │            Redis
+                    │               │
+                    └───────────────┘
+
+The project deliberately keeps gateway and orchestration responsibilities separated so that external services can be replaced without rewriting the core orchestration layer.
+
+💾 Durable State Management
+
+Phase 6 introduced:
+
+RedisStateManager
+
+The production state backend uses Redis for durable request state.
+
+Implemented capabilities include:
+
+Persistent request state
+Request recovery after process restart
+Atomic state transitions
+Distributed locking
+Idempotency using client_request_id
+Configurable key prefixes
+Automatic TTL expiration
+Structured error persistence
+
+The project also retains:
+
+InMemoryStateManager
+
+for lightweight local development and unit testing.
+
+State architecture
+StateManager
+    │
+    ├── InMemoryStateManager
+    │
+    └── RedisStateManager
+
+Production configuration can select Redis while tests can continue using the in-memory implementation.
+
+⚙️ Current Implementation Status
+
+The project is being developed incrementally.
+
+Phase	Status
+Phase 4 — API & Async Request Lifecycle	✅ Complete
+Phase 5 — Failure & Edge-case Testing	✅ Complete
+Phase 6 — Durable Redis State Management	✅ Complete
+Phase 7 — Durable Task Execution	🚧 Next
+Phase 8 — Real Service Integration	⏳ Planned
+Phase 9 — Production Hardening	⏳ Planned
+🧪 Testing
+
+The current implementation has 44 automated tests.
+
+Test coverage includes:
+
+Unit Tests
+Request/response models
+Pydantic contracts
+State transitions
+Idempotency
+State locking
+Mock gateways
+Contract validation
+Redis state management
+Integration Tests
+Orchestration service
+FastAPI routes
+Request lifecycle
+Status/result endpoints
+Resilience Tests
+
+The test suite covers failure and edge-case scenarios including:
+
+Transient failures
+Timeouts
+Malformed responses
+Delivery failures
+Visualization metadata
+State recovery
+Concurrent access
+
+Run the complete test suite:
+
+pytest
+
+Current verified result:
+
+44 passed
+📁 Repository Structure
+
+The repository is organized around the backend orchestration architecture.
+
+Sagarvani Complete/
+│
+├── app/
+│   ├── config/
+│   │   └── settings.py
+│   │
+│   ├── models/
+│   │   └── requests.py
+│   │
+│   ├── services/
+│   │   ├── state_manager.py
+│   │   └── orchestration_service.py
+│   │
+│   ├── gateways/
+│   │   ├── planner/
+│   │   └── interpreter/
+│   │
+│   └── main.py
+│
+├── planner/
+│   └── ...
+│
+├── tests/
+│   ├── unit/
+│   │   ├── test_models_and_contracts.py
+│   │   ├── test_state_manager.py
+│   │   ├── test_redis_state_manager.py
+│   │   ├── test_gateways.py
+│   │   └── test_contract_validator.py
+│   │
+│   └── integration/
+│       ├── test_orchestration_service.py
+│       ├── test_api_routes.py
+│       └── test_resilience.py
+│
+├── requirements.txt
+├── .env.example
+├── .gitignore
+└── README.md
+
+The exact structure may evolve as Phase 7 introduces the durable task execution layer.
+
+🛠️ Technology Stack
+Backend
+Python 3.10+
+FastAPI
+Pydantic
+AsyncIO
+State Management
+Redis
+redis-py
+fakeredis for isolated testing
+Testing
+Pytest
+Async test infrastructure
+Unit tests
+Integration tests
+Resilience tests
+Planned Intelligence Layer
+
+The broader ORCA architecture is designed around:
+
+Planner Agent
+Marine Data Agent
+Weather/Hazard Agent
+Geospatial Agent
+Risk/Decision Agent
+Evidence/Validation Agent
+Conversation/Interpreter Agent
+
+These components will be integrated progressively rather than treated as one monolithic AI system.
+
+🌐 Data Ecosystem
+
+The ORCA concept is designed to work with authoritative marine and geospatial data sources.
+
+Potential sources include:
+
+Source	Intended Use
+INCOIS	PFZ, ocean forecasts, sea-state information
+MOSDAC / ISRO	Satellite and oceanographic products
+IMD	Weather, cyclone and warning information
+INCOIS ERDDAP	Machine-readable ocean datasets
+Government GIS sources	Maritime boundaries and restricted areas
+Bhuvan / NRSC	Geospatial and earth-observation information
+
+The project deliberately uses a Marine Data Gateway concept so that agents do not independently scrape or directly depend on every external source.
+
+Instead:
+
+External Sources
+       │
+       ▼
+Marine Data Gateway
+       │
+       ├── Authentication
+       ├── Retrieval
+       ├── Normalization
+       ├── Quality Checks
+       ├── Provenance
+       └── Caching
+       │
+       ▼
+ORCA Agents
+
+Data access, authentication, API availability and production usage permissions must be validated before individual integrations are considered production-ready.
+
+🗄️ Environment Configuration
+
+Create a local .env file based on the project's environment configuration.
+
+Example:
+
+STATE_BACKEND=redis
+
+REDIS_URL=redis://localhost:6379
+
+REDIS_KEY_PREFIX=orca:
+
+REDIS_TTL_SECONDS=3600
+
+Additional environment variables will be introduced as durable task execution and external service integrations are implemented.
+
+⚠️ Security
+
+Never commit:
+
+.env
+API keys
+Passwords
+Access tokens
+Private credentials
+Production secrets
+
+The repository .gitignore already excludes environment files and virtual environments.
+
+🚀 Local Development
+1. Clone
+git clone https://github.com/SyedAmaan001/SagarvaniComplete.git
+cd SagarvaniComplete
+2. Create virtual environment
+Windows
 python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On Linux/macOS:
-# source .venv/bin/activate
-
+.venv\Scripts\Activate.ps1
+Linux / macOS
+python3 -m venv .venv
+source .venv/bin/activate
+3. Install dependencies
 pip install -r requirements.txt
-```
+4. Configure environment
 
-### 4. Run the FastAPI Backend Server
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-Or run using `start.bat` on Windows.
+Create:
 
-Interactive API Documentation will be available at:
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+.env
 
-### 5. Launch the Frontend Dashboard
-Simply serve the `frontend/` directory using any local HTTP server (or open `frontend/index.html` in your browser):
-```bash
-# Using Python built-in HTTP server:
-cd frontend
-python -m http.server 3000
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+and configure the required settings.
 
-### 6. Launch the Streamlit Satellite Interpreter (Optional)
-```bash
-streamlit run Interpreter/app.py
-```
+5. Start Redis
 
----
+For local development, run a Redis instance and configure:
 
-## 📊 Core API Endpoints
+REDIS_URL=redis://localhost:6379
+6. Start FastAPI
+uvicorn app.main:app --reload
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Health check & system routing map |
-| `GET` | `/api/orca/query?lat=&lon=&vessel=&language=&intent=` | Complete 10-Step Decision Pipeline (English & Kannada) |
-| `GET` | `/api/gateway/normalized?lat=&lon=` | Normalized Marine Data Gateway telemetry record |
-| `GET` | `/api/pfz/candidates?lat=&lon=` | Active INCOIS Potential Fishing Zones |
-| `GET` | `/api/geofence/restricted-zones` | MPAs, Defense firing zones & geofences |
-| `GET` | `/api/weather/{lat}/{lon}` | Combined atmospheric & marine forecast |
-| `GET` | `/api/risk/point?lat=&lon=` | Multi-parameter composite risk assessment |
-| `GET` | `/api/cyclone-track` | Active cyclone trajectories & danger zones |
-| `POST`| `/api/advisory` | AI advisory generation with automatic key rotation |
-| `POST`| `/api/send-alert` | Dispatch SMS / WhatsApp emergency alerts |
+The API will be available at:
 
-> For complete parameter lists and schemas, refer to [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md).
+http://localhost:8000
 
----
+Interactive API documentation:
 
-## 🧮 Marine Risk Scoring Model
+http://localhost:8000/docs
 
-The composite risk score is evaluated on a normalized scale (0–100):
+ReDoc:
 
-$$\text{Risk Score} = 0.30 \cdot S_{\text{wave}} + 0.25 \cdot S_{\text{wind}} + 0.20 \cdot S_{\text{current}} + 0.15 \cdot S_{\text{cyclone}} + 0.10 \cdot S_{\text{lulc}}$$
+http://localhost:8000/redoc
+🔌 API
 
-| Score Range | Risk Level | Status Indicator | Action Required |
-|---|---|---|---|
-| **0 – 25** | 🟢 SAFE | Normal | Safe for artisanal and commercial fishing |
-| **26 – 50** | 🟡 CAUTION | Moderate | Exercise caution; monitor weather changes |
-| **51 – 75** | 🟠 WARNING | Severe | Avoid deep-sea ventures; stay near coastline |
-| **76 – 100** | 🔴 DANGER | Critical | Cease all operations; immediate return to harbor & auto-alert dispatched |
+The current backend exposes the orchestration lifecycle through FastAPI.
 
----
+Core routes include:
 
-## 🤝 Contributing
-Contributions, issues, and feature requests are welcome!
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+POST /orchestrate
+GET  /status
+GET  /result
+GET  /health
 
----
+The exact request and response contracts are defined by the Pydantic models and API implementation.
 
-## 📜 License
-Distributed under the MIT License. See `LICENSE` for more information.
+Use Swagger UI for the currently deployed API contract:
+
+http://localhost:8000/docs
+🔐 Reliability Design
+
+ORCA is designed with reliability as a first-class concern.
+
+Current mechanisms include:
+
+State durability
+
+Redis persists request state beyond the lifetime of an individual process.
+
+Idempotency
+
+client_request_id is used to prevent duplicate request creation.
+
+Distributed locking
+
+Redis-backed locking protects critical state transitions.
+
+State validation
+
+Invalid state transitions are rejected using the project's state transition rules.
+
+Error persistence
+
+Structured errors are preserved inside the request state.
+
+TTL
+
+Request state can automatically expire after a configurable period.
+
+🚧 Phase 7 — Durable Task Execution
+
+The current remaining limitation is background execution.
+
+The existing in-process task model is based on:
+
+asyncio.create_task(...)
+
+This means a process crash can interrupt an active task.
+
+Phase 7 will introduce a durable task execution mechanism:
+
+                FastAPI
+                   │
+                   ▼
+              Redis State
+                   │
+                   ▼
+            Durable Queue
+                   │
+          ┌────────┴────────┐
+          ▼                 ▼
+       Worker 1          Worker 2
+          │                 │
+          └────────┬────────┘
+                   ▼
+         OrchestrationService
+                   │
+                   ▼
+              Redis State
+
+Planned capabilities:
+
+Durable task queue
+Worker processes
+Retry policies
+Backoff
+Crash recovery
+Duplicate task protection
+Concurrent worker handling
+Idempotent task execution
+🔮 Future Roadmap
+Phase 7 — Durable Task Execution
+
+Replace process-local background execution with a durable worker/task system.
+
+Phase 8 — Real Service Integration
+
+Replace mock Planner and Interpreter gateways with real service integrations.
+
+This phase will include:
+
+HTTP gateway validation
+Service authentication
+Timeout handling
+Retry policies
+Contract validation
+Real integration tests
+Phase 9 — Production Hardening
+
+Planned areas include:
+
+Structured logging
+Metrics
+Observability
+Distributed tracing
+Security
+Configuration validation
+Deployment automation
+Production monitoring
+Operational recovery
+Future ORCA Expansion
+
+The broader platform can progressively expand toward:
+
+Marine data gateway integrations
+PFZ intelligence
+Weather and hazard analysis
+Geospatial reasoning
+Route planning
+Risk scoring
+Evidence/provenance
+Multilingual interaction
+Low-bandwidth access
+Voice/helpline interfaces
+Satellite data interpretation
+Wider coastal coverage
+🌍 Target Users
+
+ORCA is designed to support multiple stakeholders.
+
+🎣 Fishermen
+Safer fishing decisions
+Marine and weather information
+PFZ discovery
+Local-language interaction
+Route planning
+Hazard awareness
+🧑‍🔬 Researchers
+Integrated marine datasets
+Faster analysis
+Cross-source queries
+Visualization
+Scenario-based analysis
+🚢 Maritime Operators
+Operational planning
+Marine conditions
+Route risk
+Context-aware recommendations
+🏛️ Coastal & Disaster Authorities
+Hazard awareness
+Affected-area summaries
+Spatial intelligence
+Alerts
+Situation awareness
+💡 Why ORCA?
+
+A conventional marine application may look like:
+
+Weather API
+    +
+Ocean API
+    +
+PFZ Map
+    +
+GIS Map
+
+ORCA instead aims to provide:
+
+                User Context
+                     │
+                     ▼
+                  Planner
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+      Marine       Weather      GIS
+       Data         Data        Data
+        │            │            │
+        └────────────┼────────────┘
+                     ▼
+             Situation Model
+                     │
+                     ▼
+              Safety Gate
+                     │
+                     ▼
+              Decision Engine
+                     │
+                     ▼
+                Verification
+                     │
+                     ▼
+        Recommendation + Evidence
+
+The differentiator is therefore not simply having a chatbot.
+
+It is the decision loop:
+
+Understand
+   ↓
+Plan
+   ↓
+Retrieve
+   ↓
+Reason
+   ↓
+Constrain
+   ↓
+Rank
+   ↓
+Verify
+   ↓
+Explain
+🧭 Development Philosophy
+
+ORCA follows several engineering principles:
+
+1. Safety First
+
+AI-generated recommendations must not override deterministic safety constraints.
+
+2. Evidence First
+
+Important decisions should be traceable to source data, timestamps and validation.
+
+3. Modular Agents
+
+Agents should have clear inputs, tools and outputs rather than unrestricted agent-to-agent conversations.
+
+4. Gateway-Based Data Access
+
+External data sources should be normalized through common gateway interfaces.
+
+5. Incremental Development
+
+The project is built phase-by-phase and validated before moving to the next architectural layer.
+
+6. Testability
+
+Critical behavior should be represented by automated tests.
+
+7. Production-Aware Architecture
+
+Durable state, idempotency, distributed locking and crash recovery are considered during development rather than added after the system is complete.
+
+🏆 Project
+
+Smart India Hackathon 2026
+
+Problem Statement ID : SIH26176
+Problem Statement    : ORCA Marine Ecosystem Reasoning with Collaborative Agents
+Theme                : Disaster Management
+Category             : Software
+Team                 : Team Helios Luna
+Institution           : Dayananda Sagar University
+
+The project concept proposes a Karnataka-coast pilot before progressively expanding coverage and capabilities.
+
+📚 References
+
+The ORCA concept is based on the proposed use of authoritative marine, meteorological, satellite and geospatial sources, including INCOIS, MOSDAC/ISRO, IMD, ERDDAP and government GIS datasets.
+
+Relevant sources identified in the project documentation include:
+
+INCOIS
+INCOIS ERDDAP
+MOSDAC / ISRO
+IMD
+Bhuvan / NRSC
+Government geospatial datasets
+
+API availability, authentication requirements, update frequency and usage permissions should be validated before production integration.
+
+🤝 Contributing
+
+Contributions and improvements are welcome.
+
+Create a feature branch:
+
+git checkout -b feature/your-feature
+
+Make your changes:
+
+git add .
+git commit -m "Add your feature"
+
+Push:
+
+git push origin feature/your-feature
+
+Then open a Pull Request.
+
+📄 License
+
+This project is intended to be distributed under the MIT License.
+
+See LICENSE for details.
