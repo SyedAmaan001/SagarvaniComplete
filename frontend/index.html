@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAGARVANI — ORCA Marine Intelligence & Decision Support System</title>
+  <meta name="description" content="ORCA: Agentic AI Ocean Risk & Coastal Advisory System — Real-time PFZ, Hard Safety Gate, Safest Route, Indian Multilingual Decision Support. SIH 2026." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════ TOPBAR ═══════════════════════════════════ -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-icon">🌊</div>
+    <div>
+      <div class="brand-title">SAGARVANI <span class="badge-agentic" data-i18n="badge_agentic">AGENTIC AI</span></div>
+      <div class="brand-sub" data-i18n="topbar_subtitle">ORCA — Ocean Risk &amp; Coastal Advisory System · SIH 2026 (Problem: SIH26176)</div>
+    </div>
+  </div>
+  <div class="topbar-controls">
+    <!-- Indian Language Selector -->
+    <div class="lang-selector-wrap">
+      <span class="lang-icon">🌐</span>
+      <select id="lang-select" class="lang-select" onchange="onLanguageChange()">
+        <option value="en" selected>English</option>
+        <option value="kn">ಕನ್ನಡ (Kannada)</option>
+        <option value="hi">हिन्दी (Hindi)</option>
+        <option value="ta">தமிழ் (Tamil)</option>
+        <option value="te">తెలుగు (Telugu)</option>
+        <option value="ml">മലയാളം (Malayalam)</option>
+        <option value="mr">मराठी (Marathi)</option>
+        <option value="gu">ગુજરાતી (Gujarati)</option>
+        <option value="bn">বাংলা (Bengali)</option>
+        <option value="or">ଓଡ଼ିଆ (Odia)</option>
+      </select>
+    </div>
+    <div class="topbar-pills">
+      <span class="pill pill-green" id="server-status-badge" data-i18n="backend_live">⬤ Backend Live</span>
+      <span class="pill pill-blue">INCOIS · MOSDAC · IMD</span>
+      <span class="pill pill-amber" id="time-badge">--:-- UTC</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════ ASK ORCA HERO SECTION ══════════════════════════════ -->
+<section class="ask-orca-hero">
+  <div class="hero-inner">
+    <div class="chat-bar-container">
+      <div class="chat-input-wrapper">
+        <span class="chat-ai-icon">🤖</span>
+        <input 
+          id="chat-input" 
+          class="chat-input" 
+          type="text" 
+          placeholder="Ask ORCA: e.g. 'I have a 5 m boat. Can I leave Malpe at 5 AM tomorrow and fish within 30 km?'" 
+          data-i18n-placeholder="chat_placeholder"
+          onkeydown="if(event.key==='Enter') submitChatMessage()"
+          oninput="onChatInputChange()"
+        />
+        <button id="btn-mic" class="btn-mic" type="button" onclick="toggleVoiceRecording()" title="🎙️ Speak in Indian Regional Language (Kannada, Hindi, Tamil, Telugu, English...)">
+          <span id="mic-icon">🎙️</span>
+        </button>
+        <button id="btn-chat-send" class="btn-chat-send" onclick="submitChatMessage()">
+          <span data-i18n="btn_analyze_query">Analyze Query</span> ➔
+        </button>
+      </div>
+
+      <!-- 5 Mandatory MVP Demo Journeys -->
+      <div class="demo-journeys-bar">
+        <span class="journeys-label" data-i18n="demo_journeys_label">⚡ 5 MVP Demo Journeys:</span>
+        <button class="journey-pill" onclick="triggerDemoJourney(1)" data-i18n="journey_1">
+          1. Can I safely go fishing tomorrow morning?
+        </button>
+        <button class="journey-pill" onclick="triggerDemoJourney(2)" data-i18n="journey_2">
+          2. Where is the nearest useful PFZ?
+        </button>
+        <button class="journey-pill" onclick="triggerDemoJourney(3)" data-i18n="journey_3">
+          3. What are the sea conditions near me?
+        </button>
+        <button class="journey-pill" onclick="triggerDemoJourney(4)" data-i18n="journey_4">
+          4. Find productive area safe &amp; not restricted
+        </button>
+        <button class="journey-pill" onclick="triggerDemoJourney(5)" data-i18n="journey_5">
+          5. Show safest route to selected area
+        </button>
+      </div>
+
+      <!-- Editable Understanding Chips -->
+      <div class="understanding-chips-container" id="chips-container">
+        <div class="chips-header">
+          <span data-i18n="chips_header">🧠 Extracted Operational Understanding (Click any chip to edit):</span>
+          <span class="chips-reset" onclick="resetScenario()" data-i18n="chips_reset">Reset Scenario</span>
+        </div>
+        <div class="chips-row" id="understanding-chips">
+          <div class="chip" onclick="editChip('location')">📍 <span data-i18n="chip_location">Location</span>: <strong id="chip-val-loc">Malpe (13.35°N, 74.70°E)</strong> ✎</div>
+          <div class="chip" onclick="editChip('time')">⏰ <span data-i18n="chip_departure">Departure</span>: <strong id="chip-val-time">Tomorrow 05:00 AM</strong> ✎</div>
+          <div class="chip" onclick="editChip('vessel')">🚤 <span data-i18n="chip_vessel">Vessel</span>: <strong id="chip-val-vessel">Motorized OBM (8–10 m)</strong> ✎</div>
+          <div class="chip" onclick="editChip('activity')">🎯 <span data-i18n="chip_activity">Activity</span>: <strong id="chip-val-act">Fishing</strong> ✎</div>
+          <div class="chip" onclick="editChip('range')">📏 <span data-i18n="chip_range">Range</span>: <strong id="chip-val-range">35 km</strong> ✎</div>
+          <div class="chip" onclick="editChip('constraints')">🛡️ <span data-i18n="chip_constraints">Constraints</span>: <strong id="chip-val-const">Avoid MPAs, Vessel limits</strong> ✎</div>
+        </div>
+      </div>
+
+      <!-- Live Conversational ORCA Response Display -->
+      <div class="chat-response-card" id="chat-response-card" style="display:none;">
+        <div class="chat-response-header">
+          <div class="chat-response-title">
+            <span class="chat-response-avatar">🤖</span>
+            <div>
+              <div class="chat-agent-name" data-i18n="chat_agent_title">ORCA Agentic Synthesis</div>
+              <div class="chat-query-echo" id="chat-query-echo">"Can I safely go fishing tomorrow morning?"</div>
+            </div>
+          </div>
+          <div class="chat-response-meta">
+            <span class="intent-pill" id="chat-intent-pill">🎯 Safe Fishing Advisory</span>
+            <span class="chat-verdict-pill" id="chat-verdict-pill">AVOID</span>
+          </div>
+        </div>
+        <div class="chat-response-body" id="chat-response-text">
+          <!-- Populated dynamically -->
+        </div>
+        <div class="chat-response-actions">
+          <button class="chat-action-btn" onclick="document.querySelector('.operational-map-card')?.scrollIntoView({behavior:'smooth'})">🧭 View Course on Map</button>
+          <button class="chat-action-btn" onclick="document.querySelector('.decision-card')?.scrollIntoView({behavior:'smooth'})">📊 Decision Package</button>
+          <button class="chat-action-btn" onclick="document.getElementById('tide-chart-wrap')?.scrollIntoView({behavior:'smooth'})">🌊 Tidal Forecast</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ MAIN LAYOUT ══════════════════════════════ -->
+<div class="layout">
+
+  <!-- ─── LEFT SIDEBAR ─────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Query panel / Scenario Controls -->
+    <div class="card query-card">
+      <div class="card-label" data-i18n="card_scenario_controls">🎯 Scenario Controls &amp; Query</div>
+      
+      <!-- TIDE STATION SELECTOR (SINGLE SOURCE OF TRUTH) -->
+      <div class="field-row">
+        <label class="field-label" data-i18n="lbl_tide_station">Tide Station</label>
+        <select id="inp-station" class="inp" onchange="onTideStationChange()">
+          <option value="Malpe" selected>Malpe Harbor (Karnataka)</option>
+          <option value="Mangalore">Mangalore Port (Karnataka)</option>
+          <option value="Karwar">Karwar Bay (Karnataka)</option>
+          <option value="Kochi">Kochi Harbor (Kerala)</option>
+          <option value="Chennai">Chennai Port (Tamil Nadu)</option>
+        </select>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" data-i18n="lbl_latitude">Latitude (°N)</label>
+        <input id="inp-lat" class="inp" type="number" value="13.35" step="0.05" onchange="onCoordsChange()" />
+      </div>
+      <div class="field-row">
+        <label class="field-label" data-i18n="lbl_longitude">Longitude (°E)</label>
+        <input id="inp-lon" class="inp" type="number" value="74.70" step="0.05" onchange="onCoordsChange()" />
+      </div>
+      <div class="field-row">
+        <label class="field-label" data-i18n="lbl_vessel_class">Vessel Class</label>
+        <select id="inp-vessel" class="inp" onchange="syncScenarioFromForm()">
+          <option value="artisanal_canoe" data-i18n="opt_vessel_canoe">Traditional Canoe (≤7 m)</option>
+          <option value="motorized_craft" selected data-i18n="opt_vessel_motorized">Motorized OBM (8–10 m)</option>
+          <option value="mechanized_trawler" data-i18n="opt_vessel_trawler">Mechanized Trawler (>12 m)</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label" data-i18n="lbl_dep_window">Departure Window</label>
+        <select id="inp-time-select" class="inp" onchange="syncScenarioFromForm()">
+          <option value="Tomorrow 05:00 AM" selected data-i18n="opt_time_tomorrow_05am">Tomorrow 05:00 AM (Early Ebb)</option>
+          <option value="Tomorrow 09:00 AM" data-i18n="opt_time_tomorrow_09am">Tomorrow 09:00 AM (High Tide)</option>
+          <option value="Tomorrow 02:00 PM" data-i18n="opt_time_tomorrow_02pm">Tomorrow 02:00 PM (Afternoon)</option>
+          <option value="Today Immediate" data-i18n="opt_time_today_now">Today Immediate Departure</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label class="field-label" data-i18n="lbl_max_range">Max Range (km)</label>
+        <input id="inp-range" class="inp" type="number" value="35" min="5" max="150" step="5" onchange="syncScenarioFromForm()" />
+      </div>
+
+      <button id="btn-analyze" class="btn-primary" onclick="runFullAnalysis()">
+        ⚓ <span data-i18n="btn_run_decision_loop">Run Full Decision Loop</span>
+      </button>
+    </div>
+
+    <!-- ORCA 10-Step Pipeline status -->
+    <div class="card">
+      <div class="card-label" data-i18n="card_orca_pipeline">⚙️ ORCA 10-Step Pipeline Engine</div>
+      <div class="pipeline-steps" id="pipeline-steps">
+        <div class="step step-done" id="step-0">① Query Received</div>
+        <div class="step step-done" id="step-1">② Intent Interpreted</div>
+        <div class="step step-idle" id="step-2">③ Plan Generated</div>
+        <div class="step step-idle" id="step-3">④ Data Retrieved</div>
+        <div class="step step-idle" id="step-4">⑤ Normalised</div>
+        <div class="step step-idle" id="step-5">⑥ Reasoning</div>
+        <div class="step step-idle" id="step-6">⑦ Safety Constrained</div>
+        <div class="step step-idle" id="step-7">⑧ Ranked</div>
+        <div class="step step-idle" id="step-8">⑨ Verified</div>
+        <div class="step step-idle" id="step-9">⑩ Advisory Delivered</div>
+      </div>
+    </div>
+
+    <!-- Maritime Limits -->
+    <div class="card" id="maritime-card">
+      <div class="card-label" data-i18n="card_maritime_limits">🗺️ Maritime Limits &amp; Baseline</div>
+      <div id="maritime-content"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>
+    </div>
+
+  </aside>
+
+  <!-- ─── CENTRE MAIN ───────────────────────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- ═════════ DECISION PACKAGE & INTERACTIVE OPERATIONAL MAP ROW ═════════ -->
+    <div class="decision-map-row">
+      
+      <!-- DECISION PACKAGE CARD (P0) -->
+      <div class="card decision-card" id="decision-card">
+        <div class="card-label flex-between">
+          <span data-i18n="card_exec_rec">🎯 Executive Recommendation</span>
+          <span class="tag-status" id="dec-status-tag" data-i18n="status_standby">STANDBY</span>
+        </div>
+        
+        <div class="decision-hero">
+          <div class="verdict-badge verdict-go" id="dec-verdict-badge">
+            <span class="verdict-icon" id="dec-verdict-icon">✅</span>
+            <div>
+              <div class="verdict-title" id="dec-verdict-text">GO (FAVORABLE)</div>
+              <div class="verdict-sub" id="dec-verdict-sub" data-i18n="verdict_sub_go">Safe Sea-State · Deterministic Safety Gate Passed</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="decision-grid">
+          <div class="dec-item">
+            <div class="dec-key" data-i18n="dec_best_zone">Best Fishing Zone</div>
+            <div class="dec-val highlight-blue" id="dec-best-zone">Malpe Deep Front</div>
+          </div>
+          <div class="dec-item">
+            <div class="dec-key" data-i18n="dec_dep_window">Best Departure Window</div>
+            <div class="dec-val" id="dec-best-window">05:30 – 09:30 AM IST</div>
+          </div>
+          <div class="dec-item">
+            <div class="dec-key" data-i18n="dec_safety_score">Safety Score</div>
+            <div class="dec-val highlight-green" id="dec-safety-score">88 / 100</div>
+          </div>
+          <div class="dec-item">
+            <div class="dec-key" data-i18n="dec_fishing_value">Fishing Value</div>
+            <div class="dec-val highlight-amber" id="dec-fish-score">84 / 100</div>
+          </div>
+          <div class="dec-item">
+            <div class="dec-key" data-i18n="dec_safest_route">Safest Route</div>
+            <div class="dec-val" id="dec-route-km">17.4 km (~1.0h)</div>
+          </div>
+          <div class="dec-item">
+            <div class="dec-key" data-i18n="dec_confidence">Data Confidence</div>
+            <div class="dec-val" id="dec-confidence">0.91 (High)</div>
+          </div>
+        </div>
+
+        <!-- Evidence-Backed Explanation in Indian Language -->
+        <div class="dec-why-box">
+          <div class="dec-why-label" data-i18n="dec_why_label">🔍 Why this decision? (Evidence-Backed Explanation)</div>
+          <div class="dec-why-content" id="dec-why-text">
+            Sea state is safe for Motorized Craft (Waves: 1.2m, Wind: 22 km/h). Active thermal front and high chlorophyll-a detected at Malpe Front. Netrani Naval &amp; Coral Sanctuary is bypassed on calculated route.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- INTERACTIVE OPERATIONAL MAP CARD (P0) -->
+      <div class="card map-card" id="map-card">
+        <div class="card-label flex-between">
+          <span data-i18n="card_map_title">🗺️ Interactive Operational Map &amp; Safest Route</span>
+          <div class="map-controls-inline">
+            <button class="btn-map-control" onclick="resetMapView()" data-i18n="btn_map_center">⌖ Center</button>
+            <button class="btn-map-control" onclick="toggleMapLayer('route')" data-i18n="btn_map_route">Route</button>
+            <button class="btn-map-control" onclick="toggleMapLayer('hazards')" data-i18n="btn_map_hazards">Hazards</button>
+          </div>
+        </div>
+        
+        <!-- Leaflet Map Container -->
+        <div id="operational-map" class="operational-map-container"></div>
+        
+        <!-- Operational Map Legend -->
+        <div class="map-legend">
+          <span class="legend-item"><span class="legend-dot dot-boat"></span> <span data-i18n="leg_boat">Departure Boat</span></span>
+          <span class="legend-item"><span class="legend-dot dot-pfz"></span> <span data-i18n="leg_pfz">Candidate PFZ</span></span>
+          <span class="legend-item"><span class="legend-dot dot-rec"></span> <span data-i18n="leg_rec">Recommended PFZ</span></span>
+          <span class="legend-item"><span class="legend-dot dot-danger"></span> <span data-i18n="leg_danger">Restricted MPA (Avoid)</span></span>
+          <span class="legend-item"><span class="legend-line line-safe"></span> <span data-i18n="leg_safe_route">Safest Route</span></span>
+          <span class="legend-item"><span class="legend-line line-blocked"></span> <span data-i18n="leg_avoided">Avoided Hazard</span></span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TOP METRIC STRIP -->
+    <div class="metric-strip" id="metric-strip">
+      <div class="metric-card" id="mc-pfz">
+        <div class="metric-icon">🐟</div>
+        <div class="metric-val" id="mc-pfz-val">--</div>
+        <div class="metric-key" data-i18n="metric_pfz">PFZ Status</div>
+        <div class="metric-src">INCOIS PFZ Bulletin</div>
+      </div>
+      <div class="metric-card" id="mc-sst">
+        <div class="metric-icon">🌡️</div>
+        <div class="metric-val" id="mc-sst-val">-- °C</div>
+        <div class="metric-key" data-i18n="metric_sst">Sea Surface Temp</div>
+        <div class="metric-src">EOS-06 / OCM-3</div>
+      </div>
+      <div class="metric-card" id="mc-chla">
+        <div class="metric-icon">🌿</div>
+        <div class="metric-val" id="mc-chla-val">-- mg/m³</div>
+        <div class="metric-key" data-i18n="metric_chla">Chlorophyll-a</div>
+        <div class="metric-src">MOSDAC Ocean Colour</div>
+      </div>
+      <div class="metric-card" id="mc-wave">
+        <div class="metric-icon">🌊</div>
+        <div class="metric-val" id="mc-wave-val">-- m</div>
+        <div class="metric-key" data-i18n="metric_wave">Wave Height (Hs)</div>
+        <div class="metric-src">INCOIS OSF</div>
+      </div>
+      <div class="metric-card" id="mc-tide">
+        <div class="metric-icon">🕐</div>
+        <div class="metric-val" id="mc-tide-val">--</div>
+        <div class="metric-key" data-i18n="metric_tide">Tidal State</div>
+        <div class="metric-src">INCOIS Tidal Network</div>
+      </div>
+      <div class="metric-card" id="mc-risk">
+        <div class="metric-icon">⚠️</div>
+        <div class="metric-val" id="mc-risk-val">--</div>
+        <div class="metric-key" data-i18n="metric_safety_gate">Safety Gate</div>
+        <div class="metric-src">ORCA Deterministic Rules</div>
+      </div>
+    </div>
+
+    <!-- ROW: SVA + Satellite -->
+    <div class="row-2col">
+
+      <!-- Small Vessel Advisory -->
+      <div class="card">
+        <div class="card-label" data-i18n="card_sva_title">🚢 Small Vessel Advisory (SVA) — Hard Limits</div>
+        <div id="sva-content">
+          <div class="skeleton-block"></div>
+        </div>
+      </div>
+
+      <!-- Satellite Composite -->
+      <div class="card">
+        <div class="card-label" data-i18n="card_sat_title">🛰️ Satellite Products — EOS-06 / Oceansat-3</div>
+        <div id="satellite-content">
+          <div class="skeleton-block"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ROW: Tide Chart + Weather/Lightning -->
+    <div class="row-2col">
+
+      <!-- Tide Prediction -->
+      <div class="card">
+        <div class="card-label" data-i18n="card_tide_title">🌊 Tidal Forecast — INCOIS Harmonic Model</div>
+        <div id="tide-chart-wrap">
+          <canvas id="tide-chart" height="140"></canvas>
+        </div>
+        <div id="tide-meta" class="tide-meta"></div>
+      </div>
+
+      <!-- Weather / Cyclone / Lightning -->
+      <div class="card">
+        <div class="card-label" data-i18n="card_weather_title">⛈️ Weather · Lightning · Cyclone Warnings</div>
+        <div id="weather-content">
+          <div class="skeleton-block"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ORCA Advisory Output (Multilingual Delivery) -->
+    <div class="card advisory-card">
+      <div class="card-label" data-i18n="card_advisory_title">🤖 Multilingual Advisory — ORCA Agentic Synthesis</div>
+      <div id="advisory-content" class="advisory-body">
+        <div class="advisory-placeholder">
+          <span>🌊</span>
+          <p data-i18n="advisory_placeholder">Run Full Analysis or ask a question in Indian languages to generate bilingual decision recommendations.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ERDDAP Dataset + Evidence Trail -->
+    <div class="row-2col">
+
+      <div class="card">
+        <div class="card-label" data-i18n="card_erddap_title">📦 ERDDAP Machine-Readable Dataset</div>
+        <div id="erddap-content">
+          <div class="skeleton-block"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label" data-i18n="card_evidence_title">🔍 Evidence Trail &amp; Data Provenance Audit</div>
+        <div id="evidence-content">
+          <div class="skeleton-block"></div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+</div><!-- /layout -->
+
+<!-- Toast notifications -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- Leaflet Map JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="app.js?v=2"></script>
+</body>
+</html>
