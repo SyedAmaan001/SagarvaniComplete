@@ -8,6 +8,32 @@
 [![Pytest](https://img.shields.io/badge/Tests-44%20Passing-brightgreen.svg)](https://pytest.org/)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)]()
 
+🚀 **Live Demo:** [https://sagarvani-frontend-production.up.railway.app/](https://sagarvani-frontend-production.up.railway.app/)
+
+[![Website](https://img.shields.io/website?url=https%3A%2F%2Fsagarvani-frontend-production.up.railway.app%2F&up_message=online&up_color=success&down_message=offline&down_color=red&style=for-the-badge)](https://sagarvani-frontend-production.up.railway.app/)
+
+---
+
+## 📑 Table of Contents
+- [Overview](#-overview)
+- [Problem](#-problem)
+- [Vision](#-vision)
+- [Current Architecture](#-current-architecture)
+- [Current Implementation Status](#-current-implementation-status)
+- [Testing](#-testing)
+- [Repository Structure](#-repository-structure)
+- [Technology Stack](#-technology-stack)
+- [Data Ecosystem](#-data-ecosystem)
+- [Environment Configuration](#-environment-configuration)
+- [Security](#-security)
+- [Local Development](#-local-development)
+- [API](#-api)
+- [Reliability Design](#-reliability-design)
+- [Future Roadmap](#-future-roadmap)
+- [Target Users](#-target-users)
+- [Why ORCA?](#-why-orca)
+- [Development Philosophy](#-development-philosophy)
+
 ---
 
 ## 🌊 Overview
@@ -148,13 +174,13 @@ Respond
 
 Extract:
 
-User intent
-Location
-Time
-Activity
-Vessel information
-Constraints
-Language
+- User intent
+- Location
+- Time
+- Activity
+- Vessel information
+- Constraints
+- Language
 2. Plan
 
 The planner determines which information and tools are actually required.
@@ -169,15 +195,15 @@ Specialized agents/tools retrieve relevant marine, weather, hazard and geospatia
 
 Different external sources are converted into a common internal representation containing information such as:
 
-parameter
-value
-unit
-latitude
-longitude
-valid_time
-source
-observed_or_forecast
-quality
+- parameter
+- value
+- unit
+- latitude
+- longitude
+- valid_time
+- source
+- observed_or_forecast
+- quality
 5. Reason
 
 Marine, weather, spatial and contextual information is combined.
@@ -188,12 +214,12 @@ Hard safety and geofence rules are applied.
 
 Examples include:
 
-Restricted areas
-Marine hazards
-Severe weather
-Cyclone conditions
-Unsafe sea state
-Route constraints
+- Restricted areas
+- Marine hazards
+- Severe weather
+- Cyclone conditions
+- Unsafe sea state
+- Route constraints
 7. Rank
 
 Only feasible options are ranked according to the user's objective.
@@ -202,22 +228,22 @@ Only feasible options are ranked according to the user's objective.
 
 The system checks:
 
-Data freshness
-Source provenance
-Conflicting results
-Confidence
-Missing critical information
+- Data freshness
+- Source provenance
+- Conflicting results
+- Confidence
+- Missing critical information
 9. Respond
 
 The final decision package can contain:
 
-Recommendation
-Reasoning/evidence
-Map information
-Route
-Warnings
-Alternatives
-Source information
+- Recommendation
+- Reasoning/evidence
+- Map information
+- Route
+- Warnings
+- Alternatives
+- Source information
 🏗️ Current Architecture
 
 The current implementation is centered around a FastAPI backend with an orchestration service, gateway abstractions and durable Redis-backed state.
@@ -288,13 +314,14 @@ Production configuration can select Redis while tests can continue using the in-
 
 The project is being developed incrementally.
 
-Phase	Status
-Phase 4 — API & Async Request Lifecycle	✅ Complete
-Phase 5 — Failure & Edge-case Testing	✅ Complete
-Phase 6 — Durable Redis State Management	✅ Complete
-Phase 7 — Durable Task Execution	🚧 Next
-Phase 8 — Real Service Integration	⏳ Planned
-Phase 9 — Production Hardening	⏳ Planned
+| Phase | Status |
+|-------|--------|
+| Phase 4 — API & Async Request Lifecycle | ✅ Complete |
+| Phase 5 — Failure & Edge-case Testing | ✅ Complete |
+| Phase 6 — Durable Redis State Management | ✅ Complete |
+| Phase 7 — Durable Task Execution | 🚧 Next |
+| Phase 8 — Real Service Integration | ⏳ Planned |
+| Phase 9 — Production Hardening | ⏳ Planned |
 🧪 Testing
 
 The current implementation has 44 automated tests.
@@ -302,34 +329,36 @@ The current implementation has 44 automated tests.
 Test coverage includes:
 
 Unit Tests
-Request/response models
-Pydantic contracts
-State transitions
-Idempotency
-State locking
-Mock gateways
-Contract validation
-Redis state management
+- Request/response models
+- Pydantic contracts
+- State transitions
+- Idempotency
+- State locking
+- Mock gateways
+- Contract validation
+- Redis state management
 Integration Tests
-Orchestration service
-FastAPI routes
-Request lifecycle
-Status/result endpoints
+- Orchestration service
+- FastAPI routes
+- Request lifecycle
+- Status/result endpoints
 Resilience Tests
 
 The test suite covers failure and edge-case scenarios including:
 
-Transient failures
-Timeouts
-Malformed responses
-Delivery failures
-Visualization metadata
-State recovery
-Concurrent access
+- Transient failures
+- Timeouts
+- Malformed responses
+- Delivery failures
+- Visualization metadata
+- State recovery
+- Concurrent access
 
 Run the complete test suite:
 
+```bash
 pytest
+```
 
 Current verified result:
 
@@ -382,31 +411,31 @@ The exact structure may evolve as Phase 7 introduces the durable task execution 
 
 🛠️ Technology Stack
 Backend
-Python 3.10+
-FastAPI
-Pydantic
-AsyncIO
+- Python 3.10+
+- FastAPI
+- Pydantic
+- AsyncIO
 State Management
-Redis
-redis-py
-fakeredis for isolated testing
+- Redis
+- redis-py
+- fakeredis for isolated testing
 Testing
-Pytest
-Async test infrastructure
-Unit tests
-Integration tests
-Resilience tests
+- Pytest
+- Async test infrastructure
+- Unit tests
+- Integration tests
+- Resilience tests
 Planned Intelligence Layer
 
 The broader ORCA architecture is designed around:
 
-Planner Agent
-Marine Data Agent
-Weather/Hazard Agent
-Geospatial Agent
-Risk/Decision Agent
-Evidence/Validation Agent
-Conversation/Interpreter Agent
+- Planner Agent
+- Marine Data Agent
+- Weather/Hazard Agent
+- Geospatial Agent
+- Risk/Decision Agent
+- Evidence/Validation Agent
+- Conversation/Interpreter Agent
 
 These components will be integrated progressively rather than treated as one monolithic AI system.
 
@@ -416,13 +445,14 @@ The ORCA concept is designed to work with authoritative marine and geospatial da
 
 Potential sources include:
 
-Source	Intended Use
-INCOIS	PFZ, ocean forecasts, sea-state information
-MOSDAC / ISRO	Satellite and oceanographic products
-IMD	Weather, cyclone and warning information
-INCOIS ERDDAP	Machine-readable ocean datasets
-Government GIS sources	Maritime boundaries and restricted areas
-Bhuvan / NRSC	Geospatial and earth-observation information
+| Source | Intended Use |
+|--------|--------------|
+| INCOIS | PFZ, ocean forecasts, sea-state information |
+| MOSDAC / ISRO | Satellite and oceanographic products |
+| IMD | Weather, cyclone and warning information |
+| INCOIS ERDDAP | Machine-readable ocean datasets |
+| Government GIS sources | Maritime boundaries and restricted areas |
+| Bhuvan / NRSC | Geospatial and earth-observation information |
 
 The project deliberately uses a Marine Data Gateway concept so that agents do not independently scrape or directly depend on every external source.
 
@@ -476,17 +506,31 @@ The repository .gitignore already excludes environment files and virtual environ
 
 🚀 Local Development
 1. Clone
+```bash
 git clone https://github.com/SyedAmaan001/SagarvaniComplete.git
+```
+```bash
 cd SagarvaniComplete
+```
 2. Create virtual environment
 Windows
+```bash
 python -m venv .venv
+```
+```bash
 .venv\Scripts\Activate.ps1
+```
 Linux / macOS
+```bash
 python3 -m venv .venv
+```
+```bash
 source .venv/bin/activate
+```
 3. Install dependencies
+```bash
 pip install -r requirements.txt
+```
 4. Configure environment
 
 Create:
@@ -501,7 +545,9 @@ For local development, run a Redis instance and configure:
 
 REDIS_URL=redis://localhost:6379
 6. Start FastAPI
+```bash
 uvicorn app.main:app --reload
+```
 
 The API will be available at:
 
@@ -540,7 +586,7 @@ State durability
 
 Redis persists request state beyond the lifetime of an individual process.
 
-Idempotency
+- Idempotency
 
 client_request_id is used to prevent duplicate request creation.
 
@@ -572,7 +618,7 @@ This means a process crash can interrupt an active task.
 
 Phase 7 will introduce a durable task execution mechanism:
 
-                FastAPI
+- FastAPI
                    │
                    ▼
               Redis State
@@ -593,14 +639,14 @@ Phase 7 will introduce a durable task execution mechanism:
 
 Planned capabilities:
 
-Durable task queue
-Worker processes
-Retry policies
-Backoff
-Crash recovery
-Duplicate task protection
-Concurrent worker handling
-Idempotent task execution
+- Durable task queue
+- Worker processes
+- Retry policies
+- Backoff
+- Crash recovery
+- Duplicate task protection
+- Concurrent worker handling
+- Idempotent task execution
 🔮 Future Roadmap
 Phase 7 — Durable Task Execution
 
@@ -612,69 +658,69 @@ Replace mock Planner and Interpreter gateways with real service integrations.
 
 This phase will include:
 
-HTTP gateway validation
-Service authentication
-Timeout handling
-Retry policies
-Contract validation
-Real integration tests
+- HTTP gateway validation
+- Service authentication
+- Timeout handling
+- Retry policies
+- Contract validation
+- Real integration tests
 Phase 9 — Production Hardening
 
 Planned areas include:
 
-Structured logging
-Metrics
-Observability
-Distributed tracing
-Security
-Configuration validation
-Deployment automation
-Production monitoring
-Operational recovery
+- Structured logging
+- Metrics
+- Observability
+- Distributed tracing
+- Security
+- Configuration validation
+- Deployment automation
+- Production monitoring
+- Operational recovery
 Future ORCA Expansion
 
 The broader platform can progressively expand toward:
 
-Marine data gateway integrations
-PFZ intelligence
-Weather and hazard analysis
-Geospatial reasoning
-Route planning
-Risk scoring
-Evidence/provenance
-Multilingual interaction
-Low-bandwidth access
-Voice/helpline interfaces
-Satellite data interpretation
-Wider coastal coverage
+- Marine data gateway integrations
+- PFZ intelligence
+- Weather and hazard analysis
+- Geospatial reasoning
+- Route planning
+- Risk scoring
+- Evidence/provenance
+- Multilingual interaction
+- Low-bandwidth access
+- Voice/helpline interfaces
+- Satellite data interpretation
+- Wider coastal coverage
 🌍 Target Users
 
 ORCA is designed to support multiple stakeholders.
 
 🎣 Fishermen
-Safer fishing decisions
-Marine and weather information
-PFZ discovery
-Local-language interaction
-Route planning
-Hazard awareness
+- Safer fishing decisions
+- Marine and weather information
+- PFZ discovery
+- Local-language interaction
+- Route planning
+- Hazard awareness
 🧑‍🔬 Researchers
-Integrated marine datasets
-Faster analysis
-Cross-source queries
-Visualization
-Scenario-based analysis
+- Integrated marine datasets
+- Faster analysis
+- Cross-source queries
+- Visualization
+- Scenario-based analysis
 🚢 Maritime Operators
-Operational planning
-Marine conditions
-Route risk
-Context-aware recommendations
+- Operational planning
+- Marine conditions
+- Route risk
+- Context-aware recommendations
 🏛️ Coastal & Disaster Authorities
-Hazard awareness
-Affected-area summaries
-Spatial intelligence
-Alerts
-Situation awareness
+- Hazard awareness
+- Affected-area summaries
+- Spatial intelligence
+- Alerts
+- Situation awareness
 💡 Why ORCA?
 
 A conventional marine application may look like:
@@ -800,16 +846,24 @@ Contributions and improvements are welcome.
 
 Create a feature branch:
 
+```bash
 git checkout -b feature/your-feature
+```
 
 Make your changes:
 
+```bash
 git add .
+```
+```bash
 git commit -m "Add your feature"
+```
 
 Push:
 
+```bash
 git push origin feature/your-feature
+```
 
 Then open a Pull Request.
 
