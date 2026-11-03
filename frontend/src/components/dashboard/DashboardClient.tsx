@@ -16,7 +16,7 @@ import {
   initialReadouts, 
   PREDEFINED_SCENARIOS 
 } from "@/lib/mock-data/scenario";
-import { queryOrca } from "@/lib/api/orca";
+import { queryOrca, fetchLiveMap, liveReadouts, LiveMap, GeoCollection } from "@/lib/api/orca";
 import { AgentStatusRail } from "./AgentStatusRail";
 import { ReadoutStrip } from "./ReadoutStrip";
 import { ConversationRail } from "./ConversationRail";
@@ -48,7 +48,7 @@ const MapCanvas = dynamic(() => import("./MapCanvas"), {
 
 export function DashboardClient() {
   const [agents, setAgents] = useState<AgentStatus[]>(initialAgents);
-  const [readouts, setReadouts] = useState<Readout[]>(initialReadouts);
+  const [readouts, setReadouts] = useState<Readout[]>(liveReadouts(null));  // dashes until live data arrives, never mock numbers
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [activeLayers, setActiveLayers] = useState<MapLayer[]>(['Wave Height', 'Currents']);
@@ -63,6 +63,28 @@ export function DashboardClient() {
 
   const [mobileTab, setMobileTab] = useState<'chat' | 'map' | 'agents'>('chat');
 
+  // Live marine data (waves, SST, currents, fishing-front candidates) from the backend
+  const [liveMap, setLiveMap] = useState<LiveMap | null>(null);
+  const [liveLoading, setLiveLoading] = useState(true);
+  const [pipelineGeo, setPipelineGeo] = useState<GeoCollection | null>(null);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([13.35, 74.7]);
+
+  const refreshLive = async (lat: number, lon: number) => {
+    setLiveLoading(true);
+    const m = await fetchLiveMap(lat, lon, 60);
+    setLiveMap(m);
+    setReadouts(liveReadouts(m));
+    setLiveLoading(false);
+  };
+
+  // Load on mount, then re-fetch every few minutes (the backend caches for ~10 min)
+  useEffect(() => {
+    refreshLive(mapCenter[0], mapCenter[1]);
+    const id = setInterval(() => refreshLive(mapCenter[0], mapCenter[1]), 5 * 60 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapCenter]);
+
   // Toggle map layers
   const toggleLayer = (layer: MapLayer) => {
     setActiveLayers(prev => 
@@ -73,7 +95,6 @@ export function DashboardClient() {
   // Reset console to clean state
   const handleResetConsole = () => {
     setAgents(initialAgents);
-    setReadouts(initialReadouts);
     setTurns([]);
     setAlerts([]);
     setActiveLayers(['Wave Height', 'Currents']);
@@ -82,7 +103,9 @@ export function DashboardClient() {
     setTrace([]);
     setActiveIntent("");
     setIsContradictionState(false);
+    setPipelineGeo(null);
     setFocusedCoords([12.9141, 74.8560]);
+    refreshLive(mapCenter[0], mapCenter[1]);
   };
 
   // Run a scenario simulation or query
@@ -199,6 +222,14 @@ export function DashboardClient() {
       if (result.readouts && result.readouts.length > 0) {
         setReadouts(result.readouts);
       }
+      const pipe = result.raw?.pipeline_result;
+      setPipelineGeo(pipe?.cartography?.geojson ?? null);
+      const loc = pipe?.context?.location;
+      if (loc && typeof loc.lat === "number") {
+        setFocusedCoords([loc.lat, loc.lon]);
+        setMapCenter([loc.lat, loc.lon]);   // re-fetches live layers around the asked location
+      }
+      setActiveLayers(prev => Array.from(new Set<MapLayer>([...prev, 'Wave Height', 'PFZ', 'SST'])));
       if (result.alerts && result.alerts.length > 0) {
         setAlerts(result.alerts);
       }
@@ -207,39 +238,30 @@ export function DashboardClient() {
       }
       setIsTyping(false);
       setShowReasoning(true);
-    } catch {
-      setTimeout(() => {
-        setAgents(prev => prev.map(a => ({ ...a, state: 'validated' })));
-        setTurns(prev => [...prev, {
-          id: `turn-sag-${Date.now()}`,
-          role: 'sagarvani',
-          text: `ORCA has synthesized marine conditions for your query: "${queryText}". Current wave heights off the west coast remain moderate (1.1m - 1.4m) with winds at 12 knots. Always observe localized weather warnings before launching craft.`,
-          evidence: [
-            { source: "INCOIS Coastal Observation", summary: "Wave height: 1.2m, slight sea state." },
-            { source: "IMD Weather Radar", summary: "Clear atmospheric conditions." }
-          ]
-        }]);
-        setTrace([
-          "1. Parsed query context and spatial bounds.",
-          "2. Queried INCOIS wave telemetry & IMD meteorological radar.",
-          "3. Evaluated risk envelope for small-to-medium vessels.",
-          "4. Generated validated decision advisory."
-        ]);
-        setIsTyping(false);
-        setShowReasoning(true);
-      }, 2000);
+    } catch (err) {
+      setAgents(prev => prev.map(a => ({ ...a, state: 'degraded' })));
+      setTurns(prev => [...prev, {
+        id: `turn-sag-${Date.now()}`,
+        role: 'sagarvani',
+        text: "I could not reach the ORCA backend, so I cannot give you a verified answer. " +
+              "Nothing has been estimated. Please check that the backend is running, and rely on official INCOIS / IMD bulletins before going to sea.",
+        evidence: []
+      }]);
+      setAlerts([{
+        id: `alert-${Date.now()}`,
+        type: 'danger',
+        title: 'Backend unreachable',
+        message: err instanceof Error ? err.message : 'Request failed',
+        source: 'Dashboard',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+      setTrace(["1. Request to the ORCA backend failed.", "2. No data was estimated or substituted."]);
+      setIsTyping(false);
+      setShowReasoning(true);
     }
   };
 
-  // Auto-run safe scenario on initial load if empty
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (turns.length === 0) {
-        executeScenario("safe-fishing-mangalore");
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, []);
+
 
   return (
     <div className="flex flex-col h-screen w-full bg-bg-sunken overflow-hidden text-foreground font-sans select-none">
@@ -382,6 +404,9 @@ export function DashboardClient() {
             <MapCanvas 
               activeLayers={activeLayers} 
               focusedCoordinates={focusedCoords}
+              liveMap={liveMap}
+              liveLoading={liveLoading}
+              pipelineGeoJson={pipelineGeo}
             />
             
             {/* Step-by-Step Reasoning Panel */}

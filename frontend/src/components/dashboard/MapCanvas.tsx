@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   TileLayer,
   Marker,
   Popup,
   Circle,
+  CircleMarker,
   Polyline,
   Polygon,
   LayerGroup,
@@ -16,6 +17,7 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { MapLayer } from "@/lib/types";
+import type { LiveMap, GeoCollection, GeoFeature } from "@/lib/api/orca";
 
 // Helper to smoothly animate map to new coordinates
 function MapViewController({ coords, zoom }: { coords?: [number, number]; zoom?: number }) {
@@ -39,15 +41,41 @@ function makeSvgIcon(color: string) {
   });
 }
 
-const cyanMarkerIcon   = makeSvgIcon("#00FFFF");
-const dangerMarkerIcon = makeSvgIcon("#FF4D6D");
-const greenMarkerIcon  = makeSvgIcon("#22E29A");
+const cyanMarkerIcon  = makeSvgIcon("#00FFFF");
+const greenMarkerIcon = makeSvgIcon("#22E29A");
+
+// GeoJSON is [lon, lat]; Leaflet wants [lat, lon]
+const toLatLng = (c: number[]): [number, number] => [c[1], c[0]];
+const pointOf = (f: GeoFeature): [number, number] => toLatLng(f.geometry.coordinates);
+
+const WAVE_COLORS: Record<string, string> = {
+  NORMAL: "#00FFFF",
+  CAUTION: "#FFD43B",
+  HIGH: "#FFA94D",
+  DANGER: "#FF4D6D",
+};
+
+/** Blue (cold) to red (warm), scaled to the temperatures actually present. */
+function sstColor(t: number, min: number, max: number): string {
+  const span = Math.max(0.5, max - min);
+  const hue = 240 - 240 * Math.min(1, Math.max(0, (t - min) / span));
+  return `hsl(${hue}, 85%, 55%)`;
+}
+
+const istTime = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" }) + " IST"
+    : "—";
 
 interface MapCanvasProps {
   activeLayers: MapLayer[];
   center?: [number, number];
   zoom?: number;
   focusedCoordinates?: [number, number];
+  liveMap?: LiveMap | null;
+  liveLoading?: boolean;
+  /** GeoJSON from the last chat decision (route, recommended zone) */
+  pipelineGeoJson?: GeoCollection | null;
 }
 
 export default function MapCanvas({
@@ -55,12 +83,20 @@ export default function MapCanvas({
   center = [13.1, 74.4],
   zoom = 8,
   focusedCoordinates,
+  liveMap,
+  liveLoading = false,
+  pipelineGeoJson,
 }: MapCanvasProps) {
   const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     setMapReady(true);
   }, []);
+
+  const sstRange = useMemo(() => {
+    const vals = (liveMap?.layers.sst.features ?? []).map(f => f.properties.sst_c as number);
+    return vals.length ? { min: Math.min(...vals), max: Math.max(...vals) } : { min: 26, max: 31 };
+  }, [liveMap]);
 
   if (!mapReady) {
     return (
@@ -69,6 +105,25 @@ export default function MapCanvas({
         <span>Initializing Spatial Map Engine...</span>
       </div>
     );
+  }
+
+  const layers = liveMap?.layers;
+  const on = (l: MapLayer) => activeLayers.includes(l);
+
+  let status: { text: string; tone: string };
+  if (liveLoading && !liveMap) {
+    status = { text: "Fetching live marine data…", tone: "text-text-secondary" };
+  } else if (liveMap?.live) {
+    const age = liveMap.data_age_minutes;
+    status = {
+      text: `LIVE · model data valid ${istTime(liveMap.data_valid_time)}${age !== null ? ` · ${Math.round(age)} min old` : ""} · ${liveMap.ocean_point_count} sea points`,
+      tone: age !== null && age > 90 ? "text-warning" : "text-success",
+    };
+  } else {
+    status = {
+      text: "LIVE DATA UNAVAILABLE — layers are empty on purpose; nothing here is simulated",
+      tone: "text-danger",
+    };
   }
 
   return (
@@ -85,139 +140,204 @@ export default function MapCanvas({
         {/* Dark basemap — ESRI World Dark Gray (free, no API key required) */}
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-          attribution="&copy; Esri, INCOIS, IMD, ISRO Bhuvan"
+          attribution="&copy; Esri · Marine data: Open-Meteo"
           maxZoom={16}
         />
 
-        {/* Layer 1: Wave Height Swell Contours */}
-        {activeLayers.includes("Wave Height") && (
+        {/* Restricted zones are safety-critical, so they are always visible */}
+        {layers && (
           <LayerGroup>
-            <Circle
-              center={[13.3, 74.2]}
-              pathOptions={{ fillColor: "#00FFFF", color: "#00FFFF", fillOpacity: 0.18, weight: 1 }}
-              radius={32000}
-            >
-              <Popup>
-                <div className="font-mono text-xs p-1">
-                  <span className="font-bold text-primary block">INCOIS Wave Contour</span>
-                  <span>Sig. Wave Height: 1.1m — 1.3m</span>
-                </div>
-              </Popup>
-            </Circle>
-            <Circle
-              center={[12.8, 74.4]}
-              pathOptions={{ fillColor: "#00FFFF", color: "#00FFFF", fillOpacity: 0.12, weight: 1 }}
-              radius={24000}
-            />
+            {layers.restricted.features.map((f, i) => (
+              <Polygon
+                key={`rz-${i}`}
+                positions={(f.geometry.coordinates[0] as number[][]).map(toLatLng)}
+                pathOptions={{ fillColor: "#DC2626", color: "#DC2626", fillOpacity: 0.3, weight: 1.5 }}
+              >
+                <Popup>
+                  <div className="font-mono text-xs p-1">
+                    <span className="font-bold text-danger block">⛔ {f.properties.name}</span>
+                    <span className="block">{f.properties.restriction_level}</span>
+                    <span className="block text-text-secondary">{f.properties.authority}</span>
+                    <span className="block text-text-secondary">{f.properties.legal_basis}</span>
+                  </div>
+                </Popup>
+              </Polygon>
+            ))}
           </LayerGroup>
         )}
 
-        {/* Layer 2: Cyclone & Squall Hazard Overlay */}
-        {activeLayers.includes("Cyclone") && (
+        {/* Wave height (colour = level against vessel limits) */}
+        {layers && on("Wave Height") && (
           <LayerGroup>
-            <Marker position={[12.5, 73.8]} icon={dangerMarkerIcon}>
-              <Popup>
-                <div className="font-mono text-xs p-1">
-                  <span className="font-bold text-danger block">IMD Doppler Warning</span>
-                  <span>Convective Squall Cell active 60nm SW.</span>
-                </div>
-              </Popup>
-            </Marker>
-            <Circle
-              center={[12.5, 73.8]}
-              pathOptions={{ fillColor: "#FF4D6D", color: "#FF4D6D", fillOpacity: 0.25, weight: 1.5, dashArray: "4, 6" }}
-              radius={38000}
-            />
+            {layers.waves.features.map((f, i) => (
+              <CircleMarker
+                key={`wv-${i}`}
+                center={pointOf(f)}
+                radius={7}
+                pathOptions={{
+                  color: WAVE_COLORS[f.properties.level] ?? "#00FFFF",
+                  fillColor: WAVE_COLORS[f.properties.level] ?? "#00FFFF",
+                  fillOpacity: 0.5,
+                  weight: 1,
+                }}
+              >
+                <Popup>
+                  <div className="font-mono text-xs p-1">
+                    <span className="font-bold text-primary block">Wave height {f.properties.wave_height_m} m</span>
+                    <span className="block">Period: {f.properties.wave_period_s ?? "—"} s</span>
+                    <span className="block">Wind: {f.properties.wind_kmh ?? "—"} km/h</span>
+                    <span className="block text-text-secondary">Valid {istTime(f.properties.valid_time)}</span>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
           </LayerGroup>
         )}
 
-        {/* Layer 3: SST (Sea Surface Temperature) Thermal Gradient */}
-        {activeLayers.includes("SST") && (
+        {/* Sea-surface temperature */}
+        {layers && on("SST") && (
           <LayerGroup>
-            <Polygon
-              positions={[
-                [14.9, 73.8],
-                [14.9, 74.3],
-                [14.4, 74.2],
-                [14.4, 73.7],
-              ]}
-              pathOptions={{ fillColor: "#38BDF8", color: "#38BDF8", fillOpacity: 0.2, weight: 1 }}
-            >
-              <Popup>
-                <div className="font-mono text-xs p-1">
-                  <span className="font-bold text-primary block">MOSDAC SST Thermal Gradient</span>
-                  <span>Surface: 27.4°C (Upwelling Shelf Front)</span>
-                </div>
-              </Popup>
-            </Polygon>
+            {layers.sst.features.map((f, i) => {
+              const c = sstColor(f.properties.sst_c, sstRange.min, sstRange.max);
+              return (
+                <CircleMarker
+                  key={`sst-${i}`}
+                  center={pointOf(f)}
+                  radius={9}
+                  pathOptions={{ color: c, fillColor: c, fillOpacity: 0.45, weight: 0 }}
+                >
+                  <Popup>
+                    <div className="font-mono text-xs p-1">
+                      <span className="font-bold text-primary block">SST {f.properties.sst_c} °C</span>
+                      <span className="block text-text-secondary">Valid {istTime(f.properties.valid_time)}</span>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })}
           </LayerGroup>
         )}
 
-        {/* Layer 4: Currents Flow Vectors */}
-        {activeLayers.includes("Currents") && (
+        {/* Ocean current vectors */}
+        {layers && on("Currents") && (
           <LayerGroup>
-            <Polyline
-              positions={[
-                [14.5, 74.0],
-                [14.2, 74.15],
-                [13.8, 74.3],
-                [13.4, 74.45],
-                [13.0, 74.6],
-              ]}
-              pathOptions={{ color: "#00FFFF", weight: 2, dashArray: "6, 8" }}
-            />
+            {layers.currents.features.map((f, i) => (
+              <Polyline
+                key={`cur-${i}`}
+                positions={(f.geometry.coordinates as number[][]).map(toLatLng)}
+                pathOptions={{ color: "#00FFFF", weight: 2, opacity: 0.85 }}
+              >
+                <Popup>
+                  <div className="font-mono text-xs p-1">
+                    <span className="font-bold text-primary block">Current {f.properties.speed_ms} m/s</span>
+                    <span className="block">Direction {f.properties.direction_deg}°</span>
+                  </div>
+                </Popup>
+              </Polyline>
+            ))}
           </LayerGroup>
         )}
 
-        {/* Layer 5: Potential Fishing Zones (PFZ) */}
-        {activeLayers.includes("PFZ") && (
+        {/* SST-front fishing candidates (derived; not official INCOIS PFZ) */}
+        {layers && on("PFZ") && (
           <LayerGroup>
-            <Polygon
-              positions={[
-                [14.72, 73.92],
-                [14.72, 74.05],
-                [14.65, 74.05],
-                [14.65, 73.92],
-              ]}
-              pathOptions={{ fillColor: "#22E29A", color: "#22E29A", fillOpacity: 0.35, weight: 1.5 }}
-            >
-              <Popup>
-                <div className="font-mono text-xs p-1">
-                  <span className="font-bold text-success block">INCOIS PFZ Sector</span>
-                  <span>Chlorophyll-a: 0.45 mg/m³</span>
-                  <span className="block mt-1 text-text-secondary">High pelagic fish aggregation.</span>
-                </div>
-              </Popup>
-            </Polygon>
-            <Marker position={[14.68, 73.98]} icon={greenMarkerIcon}>
-              <Popup>
-                <div className="font-mono text-xs p-1">
-                  <span className="font-bold text-success">PFZ Target Front (Karwar SW)</span>
-                </div>
-              </Popup>
-            </Marker>
+            {layers.pfz.features.map((f, i) => (
+              <div key={`pfz-${i}`}>
+                <Circle
+                  center={pointOf(f)}
+                  radius={6000}
+                  pathOptions={{ fillColor: "#22E29A", color: "#22E29A", fillOpacity: 0.2, weight: 1.5 }}
+                />
+                <Marker position={pointOf(f)} icon={greenMarkerIcon}>
+                  <Popup>
+                    <div className="font-mono text-xs p-1">
+                      <span className="font-bold text-success block">{f.properties.name}</span>
+                      <span className="block">SST {f.properties.sst_c} °C · gradient {f.properties.sst_gradient_c_per_km} °C/km</span>
+                      <span className="block text-text-secondary">Front strength score {f.properties.score}/100</span>
+                      <span className="block mt-1 text-text-secondary">
+                        Model-derived candidate, not an official INCOIS PFZ. No chlorophyll feed connected.
+                      </span>
+                    </div>
+                  </Popup>
+                </Marker>
+              </div>
+            ))}
           </LayerGroup>
         )}
 
-        {/* Layer 6: High Wave Warnings */}
-        {activeLayers.includes("High Wave Warnings") && (
+        {/* High-wave warnings */}
+        {layers && on("High Wave Warnings") && (
           <LayerGroup>
-            <Circle
-              center={[13.35, 74.35]}
-              pathOptions={{ fillColor: "#FFB020", color: "#FFB020", fillOpacity: 0.28, weight: 1.5 }}
-              radius={26000}
-            >
-              <Popup>
-                <div className="font-mono text-xs p-1">
-                  <span className="font-bold text-warning block">INCOIS High Wave Warning</span>
-                  <span>2.8m swell height (Period 11.4s)</span>
-                </div>
-              </Popup>
-            </Circle>
+            {layers.wave_warnings.features.map((f, i) => (
+              <CircleMarker
+                key={`hw-${i}`}
+                center={pointOf(f)}
+                radius={14}
+                pathOptions={{
+                  color: WAVE_COLORS[f.properties.level],
+                  fillColor: WAVE_COLORS[f.properties.level],
+                  fillOpacity: 0.3,
+                  weight: 1.5,
+                }}
+              >
+                <Popup>
+                  <div className="font-mono text-xs p-1">
+                    <span className="font-bold text-warning block">
+                      {f.properties.level} · {f.properties.wave_height_m} m
+                    </span>
+                    <span className="block text-text-secondary">Valid {istTime(f.properties.valid_time)}</span>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
           </LayerGroup>
         )}
 
-        {/* Coastal Key Ports: Mangalore, Malpe/Udupi, Karwar */}
+        {/* Route and departure point from the last decision */}
+        {pipelineGeoJson && (
+          <LayerGroup>
+            {pipelineGeoJson.features.map((f, i) => {
+              const t = f.properties.type;
+              if (f.geometry.type === "LineString" && t === "SAFE_NAVIGATION_COURSE") {
+                return (
+                  <Polyline
+                    key={`rt-${i}`}
+                    positions={(f.geometry.coordinates as number[][]).map(toLatLng)}
+                    pathOptions={{ color: "#00F2FF", weight: 4 }}
+                  >
+                    <Popup><div className="font-mono text-xs p-1">{f.properties.title}</div></Popup>
+                  </Polyline>
+                );
+              }
+              if (f.geometry.type === "LineString" && t === "AVOIDED_DIRECT_SEGMENT") {
+                return (
+                  <Polyline
+                    key={`rt-${i}`}
+                    positions={(f.geometry.coordinates as number[][]).map(toLatLng)}
+                    pathOptions={{ color: "#EF4444", weight: 3, dashArray: "5, 5" }}
+                  >
+                    <Popup><div className="font-mono text-xs p-1">{f.properties.title}</div></Popup>
+                  </Polyline>
+                );
+              }
+              if (t === "USER_BASE_LOCATION") {
+                return (
+                  <Marker key={`rt-${i}`} position={pointOf(f)} icon={cyanMarkerIcon}>
+                    <Popup>
+                      <div className="font-mono text-xs p-1">
+                        <span className="font-bold text-primary block">{f.properties.title}</span>
+                        <span className="block">Gate: {f.properties.safety_status}</span>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              }
+              return null;
+            })}
+          </LayerGroup>
+        )}
+
+        {/* Fixed reference ports (real locations) */}
         <Marker position={[12.9141, 74.856]} icon={cyanMarkerIcon}>
           <Popup>
             <div className="font-mono text-xs p-1">
@@ -245,6 +365,23 @@ export default function MapCanvas({
           </Popup>
         </Marker>
       </MapContainer>
+
+      {/* Data status + honesty notes */}
+      <div className="absolute bottom-3 left-3 z-[1000] max-w-[min(92%,420px)] flex flex-col gap-1.5 pointer-events-none">
+        <div className={`bg-bg-elevated/90 backdrop-blur-md border border-border rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold ${status.tone}`}>
+          {status.text}
+        </div>
+        {on("Cyclone") && (
+          <div className="bg-bg-elevated/90 backdrop-blur-md border border-border rounded-lg px-2.5 py-1.5 font-mono text-[10px] text-warning">
+            Cyclone layer: no live IMD feed is connected, so no cyclone is drawn. Check IMD bulletins directly.
+          </div>
+        )}
+        {liveMap && liveMap.errors.length > 0 && (
+          <div className="bg-bg-elevated/90 backdrop-blur-md border border-border rounded-lg px-2.5 py-1.5 font-mono text-[10px] text-warning">
+            Partial data: {liveMap.errors[0].slice(0, 90)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

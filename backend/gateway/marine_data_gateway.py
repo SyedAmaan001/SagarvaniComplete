@@ -1,25 +1,28 @@
 """
 Marine Data Gateway (ORCA Core Architecture - Page 1 & 5)
-Normalizes disparate satellite, oceanographic, meteorological and GIS sources into
-a unified schema: Parameter | value | unit | latitude | longitude | valid_time | source | quality
+Normalizes marine / weather feeds into one schema:
+    parameter | value | unit | latitude | longitude | valid_time | source | mode | quality
 
-Data Sources Orchestrated:
-1. INCOIS: PFZ (Potential Fishing Zones), OSF (Ocean State Forecast), Tides, Sea-State
-2. MOSDAC / ISRO: SST, OCM-3 Ocean Colour / Chlorophyll-a, SCAT-3 Wind Vectors, NetCDF
-3. IMD: Weather Forecast, Cyclone RSMC, Lightning Flash Density, Coastal Warnings
-4. INCOIS ERDDAP: Machine-readable gridded ocean datasets
-5. GIS / Government Boundaries: Maritime Limits (12NM / EEZ), Marine Protected Areas, IMBL
+What is LIVE today (fetched on request, cached ~10 min, see processors/live_data.py):
+    - Open-Meteo Marine API : wave height, sea-surface temperature, ocean current, sea level
+    - Open-Meteo Weather API: 10 m wind speed and gusts
+
+What is NOT connected yet (the gateway reports these as unavailable instead of inventing values):
+    - Chlorophyll-a / ocean colour (needs Copernicus or an ERDDAP dataset)
+    - Lightning flash density, IMD warnings, live cyclone positions
+    - Official INCOIS Potential Fishing Zones (candidate zones are derived from SST fronts)
+
+What is STATIC:
+    - RESTRICTED_MARINE_ZONES and VESSEL_PROFILES below. These are curated in code as circles
+      and thresholds. Verify them against official notifications before real-world use.
 """
 
-import math
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone, timedelta
 
-from parsers.nc_parser import get_point_ocean_current, get_latest_ocean_current
-from parsers.sar_parser import get_latest_coastal_pass
-from processors.weather_processor import get_combined_forecast
+from processors import live_data
+from utils.geo_utils import haversine_km
 
-# ─── Reference Indian Marine Protected Areas & Restricted Geofences ───────────
+# ─── Reference Indian Marine Protected Areas & Restricted Geofences (STATIC) ───
 RESTRICTED_MARINE_ZONES = [
     {
         "id": "MPA_NETRANI",
@@ -71,63 +74,7 @@ RESTRICTED_MARINE_ZONES = [
     }
 ]
 
-# ─── INCOIS PFZ (Potential Fishing Zone) Candidate Database (Karnataka / West Coast) ──
-CANDIDATE_PFZ_REGISTRY = [
-    {
-        "pfz_id": "PFZ_KA_MALPE_01",
-        "name": "Malpe Deep Thermal Front",
-        "lat": 13.45,
-        "lon": 74.35,
-        "base_port": "Malpe",
-        "sst_c": 28.1,
-        "chlorophyll_mg_m3": 1.45,
-        "depth_m": 48.0,
-        "species_likely": ["Indian Mackerel", "Oil Sardine", "Tuna"],
-        "productivity_score": 88.0,
-        "valid_until": "2026-09-04T18:00:00Z"
-    },
-    {
-        "pfz_id": "PFZ_KA_MANGALORE_02",
-        "name": "Mangalore Outer Upwelling Zone",
-        "lat": 12.82,
-        "lon": 74.40,
-        "base_port": "Mangalore",
-        "sst_c": 27.8,
-        "chlorophyll_mg_m3": 1.82,
-        "depth_m": 55.0,
-        "species_likely": ["Seer Fish", "Ribbon Fish", "Squid"],
-        "productivity_score": 92.0,
-        "valid_until": "2026-09-04T18:00:00Z"
-    },
-    {
-        "pfz_id": "PFZ_KA_KARWAR_03",
-        "name": "Karwar Shelf Front",
-        "lat": 14.78,
-        "lon": 73.85,
-        "base_port": "Karwar",
-        "sst_c": 28.3,
-        "chlorophyll_mg_m3": 1.15,
-        "depth_m": 62.0,
-        "species_likely": ["Pomfret", "Trevally", "Anchovy"],
-        "productivity_score": 82.0,
-        "valid_until": "2026-09-04T18:00:00Z"
-    },
-    {
-        "pfz_id": "PFZ_KA_NETRANI_HAZARD",
-        "name": "Netrani Shoal (Restricted Zone Adjacent)",
-        "lat": 14.03,
-        "lon": 74.33,
-        "base_port": "Bhatkal",
-        "sst_c": 28.0,
-        "chlorophyll_mg_m3": 1.95,
-        "depth_m": 35.0,
-        "species_likely": ["Reef Fish", "Snapper", "Groupers"],
-        "productivity_score": 95.0, # High fish, but within restricted MPA!
-        "valid_until": "2026-09-04T18:00:00Z"
-    }
-]
-
-# ─── Vessel Profiles & Physical Sea-Keeping Constraints ────────────────────────
+# ─── Vessel Profiles & Physical Sea-Keeping Constraints (STATIC) ───────────────
 VESSEL_PROFILES = {
     "artisanal_canoe": {
         "name": "Traditional Non-Motorized / Small FRP Canoe (4–7 m)",
@@ -152,153 +99,130 @@ VESSEL_PROFILES = {
     }
 }
 
+# Parameters this gateway cannot supply live yet.
+UNAVAILABLE_FEEDS = [
+    {"parameter": "CHLOROPHYLL_A_CONCENTRATION", "needs": "Copernicus Marine / ERDDAP ocean-colour dataset"},
+    {"parameter": "LIGHTNING_FLASH_DENSITY", "needs": "IMD lightning feed"},
+    {"parameter": "ACTIVE_CYCLONES", "needs": "IMD RSMC machine-readable cyclone feed"},
+    {"parameter": "OFFICIAL_PFZ", "needs": "INCOIS PFZ advisory access"},
+]
+
+CRITICAL_PARAMETERS = ("SIGNIFICANT_WAVE_HEIGHT", "WIND_SPEED_10M")
+
 
 class MarineDataGateway:
-    """
-    Authoritative Marine Data Gateway.
-    Normalizes multi-source feeds into structured, machine-readable telemetry records.
-    """
+    """Normalizes live marine/weather feeds into structured telemetry records."""
 
-    def __init__(self):
-        self.source_metadata = {
-            "INCOIS": {"latency_hours": 3.0, "reliability": 0.98},
-            "MOSDAC_ISRO": {"latency_hours": 6.0, "reliability": 0.95},
-            "IMD": {"latency_hours": 1.0, "reliability": 0.97},
-            "ERDDAP": {"latency_hours": 4.0, "reliability": 0.94}
-        }
-
-    def fetch_normalized_marine_record(self, lat: float, lon: float) -> Dict[str, Any]:
+    def fetch_normalized_marine_record(self, lat: float, lon: float, radius_km: float = 50.0) -> Dict[str, Any]:
         """
-        Gathers live observations + forecasts from all 4 authoritative pillars
-        and formats them into the standard schema:
-        Parameter | value | unit | lat | lon | valid_time | source | observed/forecast | quality
+        Live conditions at (lat, lon). Coastal points are often land cells in the model grid,
+        so values come from the nearest ocean cell (distance reported in ``data_location``).
+        Missing values are omitted from ``normalized_records`` and listed in
+        ``unavailable_parameters``; ``critical_missing`` is non-empty when the safety gate
+        cannot be evaluated.
         """
-        now_iso = datetime.now(timezone.utc).isoformat()
-        
-        # 1. Fetch Real-time forecast & NetCDF
-        forecast = get_combined_forecast(lat, lon)
-        curr_mosdac = get_point_ocean_current(lat, lon)
-        sar_altimetry = get_latest_coastal_pass()
+        snap = live_data.get_snapshot(lat, lon, radius_km)
+        point, dist_km = live_data.nearest_ocean_point(snap, lat, lon)
+        fetched_at = snap["fetched_at"]
 
-        weather_curr = forecast.get("weather", {})
-        marine_curr = forecast.get("marine", {})
+        records: List[Dict[str, Any]] = []
+        unavailable: List[str] = []
 
-        wave_h = marine_curr.get("wave_height_m", 1.2) or 1.2
-        wind_kmh = weather_curr.get("wind_speed_kmh", 22.0) or 22.0
-        current_spd = curr_mosdac.get("speed_ms", 0.35) or 0.35
+        def add(parameter, value, unit, source, mode, valid_time):
+            if value is None or point is None:
+                unavailable.append(parameter)
+                return
+            records.append({
+                "parameter": parameter,
+                "value": value,
+                "unit": unit,
+                "latitude": point["lat"],
+                "longitude": point["lon"],
+                "valid_time": valid_time,
+                "fetched_at": fetched_at,
+                "source": source,
+                "mode": mode,
+            })
 
-        # 2. Build Internal Canonical Records
-        records = [
+        p = point or {}
+        marine_src = "Open-Meteo Marine API"
+        weather_src = "Open-Meteo Weather API"
+        mt, wt = p.get("marine_valid_time"), p.get("weather_valid_time")
+        add("SIGNIFICANT_WAVE_HEIGHT", p.get("wave_height_m"), "meters", marine_src, "MODEL_NOWCAST", mt)
+        add("WIND_SPEED_10M", p.get("wind_kmh"), "km/h", weather_src, "MODEL_NOWCAST", wt)
+        add("WIND_GUSTS_10M", p.get("gust_kmh"), "km/h", weather_src, "MODEL_NOWCAST", wt)
+        add("SURFACE_OCEAN_CURRENT_VELOCITY", p.get("current_ms"), "m/s", marine_src, "MODEL_NOWCAST", mt)
+        add("SEA_SURFACE_TEMPERATURE", p.get("sst_c"), "deg_C", marine_src, "MODEL_NOWCAST", mt)
+        add("SEA_LEVEL_HEIGHT_MSL", p.get("sea_level_m"), "meters_above_MSL", marine_src, "MODEL_NOWCAST", mt)
+
+        critical_missing = [c for c in CRITICAL_PARAMETERS if c in unavailable]
+
+        have = {r["parameter"] for r in records}
+        sources = [
             {
-                "parameter": "SIGNIFICANT_WAVE_HEIGHT",
-                "value": wave_h,
-                "unit": "meters",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "INCOIS Ocean State Forecast / Open-Meteo Marine",
-                "mode": "FORECAST",
-                "quality": "VERIFIED_HIGH"
+                "source": marine_src,
+                "parameters": ["SIGNIFICANT_WAVE_HEIGHT", "SURFACE_OCEAN_CURRENT_VELOCITY",
+                               "SEA_SURFACE_TEMPERATURE", "SEA_LEVEL_HEIGHT_MSL"],
+                "valid_time": mt, "fetched_at": fetched_at,
+                "ok": "SIGNIFICANT_WAVE_HEIGHT" in have,
             },
             {
-                "parameter": "SURFACE_OCEAN_CURRENT_VELOCITY",
-                "value": current_spd,
-                "unit": "m/s",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "MOSDAC ISRO_CURRENT_TOT NetCDF4",
-                "mode": "OBSERVED_SATELLITE",
-                "quality": "CALIBRATED"
+                "source": weather_src,
+                "parameters": ["WIND_SPEED_10M", "WIND_GUSTS_10M"],
+                "valid_time": wt, "fetched_at": fetched_at,
+                "ok": "WIND_SPEED_10M" in have,
             },
-            {
-                "parameter": "WIND_SPEED_10M",
-                "value": wind_kmh,
-                "unit": "km/h",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "IMD / Open-Meteo Atmospheric Model",
-                "mode": "FORECAST",
-                "quality": "VERIFIED_HIGH"
-            },
-            {
-                "parameter": "SEA_SURFACE_TEMPERATURE",
-                "value": 28.2,
-                "unit": "deg_C",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "MOSDAC Oceansat-3 EOS-06 / CMEMS",
-                "mode": "SATELLITE_L4",
-                "quality": "OPTIMAL"
-            },
-            {
-                "parameter": "CHLOROPHYLL_A_CONCENTRATION",
-                "value": 1.35,
-                "unit": "mg/m3",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "ISRO EOS-06 Ocean Colour Monitor (OCM-3)",
-                "mode": "SATELLITE_L3",
-                "quality": "CLOUD_FILTERED"
-            },
-            {
-                "parameter": "LIGHTNING_FLASH_DENSITY",
-                "value": 0.05,
-                "unit": "flashes/km2/day",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "IMD Lightning Warning Radar",
-                "mode": "NOWCAST",
-                "quality": "NOMINAL"
-            },
-            {
-                "parameter": "ASTRONOMICAL_TIDE_HEIGHT",
-                "value": 1.15,
-                "unit": "meters_above_CD",
-                "latitude": lat,
-                "longitude": lon,
-                "valid_time": now_iso,
-                "source": "INCOIS Tide Gauge Network",
-                "mode": "HYDRODYNAMIC_PREDICTION",
-                "quality": "PRECISE"
-            }
         ]
 
         return {
             "gateway": "ORCA Marine Data Gateway",
-            "timestamp": now_iso,
+            "timestamp": fetched_at,
             "query_location": {"lat": lat, "lon": lon},
+            "data_location": ({"lat": point["lat"], "lon": point["lon"], "distance_from_query_km": dist_km}
+                              if point else None),
             "records_count": len(records),
             "normalized_records": records,
+            "unavailable_parameters": sorted(set(unavailable)),
+            "unavailable_feeds": UNAVAILABLE_FEEDS,
+            "critical_missing": critical_missing,
+            "sources": sources,
             "provenance": {
-                "incois_status": "ACTIVE_ONLINE",
-                "mosdac_status": "DATA_ARCHIVE_LOADED",
-                "imd_status": "SYNOPTIC_BULLETIN_OK",
-                "erddap_status": "MACHINE_READABLE_STREAMING"
-            }
+                "open_meteo_marine": "OK" if "SIGNIFICANT_WAVE_HEIGHT" in have else "UNAVAILABLE",
+                "open_meteo_weather": "OK" if "WIND_SPEED_10M" in have else "UNAVAILABLE",
+                "incois": "NOT_CONNECTED",
+                "mosdac_live": "NOT_CONNECTED",
+                "imd": "NOT_CONNECTED",
+                "cyclone_feed": "NOT_CONNECTED",
+            },
+            "errors": snap.get("errors", []),
         }
 
     def get_candidate_pfz_zones(self, user_lat: float, user_lon: float, max_range_km: float = 60.0) -> List[Dict[str, Any]]:
         """
-        Retrieves Potential Fishing Zones within radius and adds distance/fuel metrics.
+        Candidate fishing zones within range, derived live from sea-surface-temperature fronts.
+        These are model-derived candidates, not official INCOIS PFZ advisories.
         """
-        from utils.geo_utils import haversine_km
+        snap = live_data.get_snapshot(user_lat, user_lon, max_range_km)
         candidates = []
-        for pfz in CANDIDATE_PFZ_REGISTRY:
-            dist = haversine_km(user_lat, user_lon, pfz["lat"], pfz["lon"])
+        for zone in live_data.detect_sst_fronts(snap["points"]):
+            dist = haversine_km(user_lat, user_lon, zone["lat"], zone["lon"])
             if dist <= max_range_km:
-                entry = dict(pfz)
+                entry = dict(zone)
                 entry["distance_from_user_km"] = round(dist, 1)
-                entry["transit_time_hours"] = round(dist / 15.0, 1) # Assumes 15 km/h cruise
+                entry["transit_time_hours"] = round(dist / 15.0, 1)  # assumes 15 km/h cruise
                 candidates.append(entry)
         return candidates
 
+    def get_hourly_outlook(self, lat: float, lon: float) -> Dict[str, Any]:
+        """Hourly wave/wind outlook at the nearest ocean cell, for departure windows."""
+        snap = live_data.get_snapshot(lat, lon, 20.0)
+        point, _ = live_data.nearest_ocean_point(snap, lat, lon)
+        if point is None:
+            return {"hours": [], "error": "no ocean data point near location", "fetched_at": snap["fetched_at"]}
+        return live_data.get_hourly_outlook(point["lat"], point["lon"])
+
     def get_restricted_marine_geofences(self) -> List[Dict[str, Any]]:
-        """Returns authoritative marine limits, restricted defense waters, and protected parks."""
+        """Curated restricted waters / protected areas (static reference data)."""
         return RESTRICTED_MARINE_ZONES
 
     def get_vessel_profile(self, profile_key: str = "motorized_craft") -> Dict[str, Any]:

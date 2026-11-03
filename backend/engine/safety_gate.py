@@ -113,14 +113,34 @@ class HardSafetyGate:
         safe_candidates = []
         rejected_candidates = []
 
+        vessel = VESSEL_PROFILES.get(vessel_type, VESSEL_PROFILES["motorized_craft"])
+
         for pfz in candidate_pfzs:
+            # Judge each zone on its own local sea state when we have it; fall back to the
+            # departure-point values otherwise. Use the worse of the two so a calm harbour
+            # never hides rough water offshore.
+            local_wave = pfz.get("wave_height_m")
+            local_wind = pfz.get("wind_kmh")
             eval_res = self.evaluate_safety_constraints(
                 target_lat=pfz["lat"],
                 target_lon=pfz["lon"],
                 vessel_type=vessel_type,
-                wave_height_m=wave_height_m,
-                wind_speed_kmh=wind_speed_kmh
+                wave_height_m=max(wave_height_m, local_wave) if local_wave is not None else wave_height_m,
+                wind_speed_kmh=max(wind_speed_kmh, local_wind) if local_wind is not None else wind_speed_kmh
             )
+
+            # Vessel operating-range rule (defined in the vessel profile, previously never applied)
+            dist = pfz.get("distance_from_user_km")
+            max_range = vessel["max_operating_distance_km"]
+            if dist is not None and dist > max_range:
+                eval_res["is_safe"] = False
+                eval_res["gate_status"] = "REJECTED_UNSAFE"
+                eval_res["decision"] = "DO_NOT_PROCEED_STAY_ASHORE"
+                eval_res["fatal_violations"].append({
+                    "rule": "VESSEL_RANGE_EXCEEDANCE",
+                    "severity": "OUT_OF_RANGE",
+                    "message": f"Zone is {dist} km away, beyond the {max_range} km operating range for {vessel['name']}."
+                })
             enriched_pfz = dict(pfz)
             enriched_pfz["safety_gate_evaluation"] = eval_res
 

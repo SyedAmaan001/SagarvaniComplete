@@ -39,6 +39,10 @@ def get_weather_forecast(lat: float, lon: float) -> Dict[str, Any]:
         ],
         "forecast_days": 3,
         "timezone": "Asia/Kolkata",
+        # Open-Meteo defaults to km/h. The code below treats the values as m/s
+        # (and converts with _ms_to_kmh), so ask for m/s explicitly. Without this
+        # every wind speed was reported 3.6x too high.
+        "wind_speed_unit": "ms",
     }
 
     try:
@@ -108,6 +112,12 @@ def get_marine_forecast(lat: float, lon: float) -> Dict[str, Any]:
         wh = current.get("wave_height", 0) or 0
         swh = current.get("swell_wave_height", 0) or 0
 
+        # Current speed comes back in km/h by default; the rest of the code expects m/s.
+        cur_unit = (data.get("current_units") or {}).get("ocean_current_velocity", "km/h")
+        cur_vel = current.get("ocean_current_velocity")
+        if cur_vel is not None and cur_unit.lower() in ("km/h", "kmh"):
+            cur_vel = round(cur_vel / 3.6, 3)
+
         return {
             "lat": lat,
             "lon": lon,
@@ -121,7 +131,7 @@ def get_marine_forecast(lat: float, lon: float) -> Dict[str, Any]:
                 "swell_wave_height_m": swh,
                 "swell_wave_period_s": current.get("swell_wave_period"),
                 "swell_wave_direction_deg": current.get("swell_wave_direction"),
-                "ocean_current_velocity_ms": current.get("ocean_current_velocity"),
+                "ocean_current_velocity_ms": cur_vel,
                 "ocean_current_direction_deg": current.get("ocean_current_direction"),
                 "sea_state": _sea_state(wh),
             },

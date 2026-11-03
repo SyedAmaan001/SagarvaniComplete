@@ -265,7 +265,7 @@ async def voice_stt_endpoint(file: UploadFile = File(...)):
 
 
 @app.post("/api/orca/chat", tags=["Conversational ORCA & Pipeline"])
-async def conversational_orca(req: ChatRequest):
+def conversational_orca(req: ChatRequest):
     """
     Conversational ORCA Agent Endpoint (Steps 1-10):
     - Step 1: User Query (Text or Voice Transcription)
@@ -337,7 +337,7 @@ async def conversational_orca(req: ChatRequest):
 
 
 @app.get("/api/orca/query", tags=["ORCA 10-Step Pipeline"])
-async def run_orca_pipeline(
+def run_orca_pipeline(
     lat: float = Query(default=13.35, description="Latitude (Default: Malpe Harbor)", example=13.35),
     lon: float = Query(default=74.70, description="Longitude", example=74.70),
     vessel: str = Query(default="motorized_craft", description="Vessel: 'artisanal_canoe', 'motorized_craft', 'mechanized_trawler'"),
@@ -377,7 +377,7 @@ async def run_orca_pipeline(
 
 
 @app.get("/api/gateway/normalized", tags=["Marine Data Gateway"])
-async def get_normalized_gateway_record(
+def get_normalized_gateway_record(
     lat: float = Query(default=13.35, example=13.35),
     lon: float = Query(default=74.70, example=74.70)
 ):
@@ -391,7 +391,7 @@ async def get_normalized_gateway_record(
 
 
 @app.get("/api/pfz/candidates", tags=["Marine Data Gateway"])
-async def get_pfz_candidates(
+def get_pfz_candidates(
     lat: float = Query(default=13.35, example=13.35),
     lon: float = Query(default=74.70, example=74.70)
 ):
@@ -416,7 +416,7 @@ async def get_restricted_geofences():
 
 
 @app.get("/api/orchestrate", tags=["Multi-Agent Orchestrator"])
-async def run_orchestrator(
+def run_orchestrator(
     lat: float = Query(default=15.0, description="Latitude", example=15.0),
     lon: float = Query(default=72.0, description="Longitude", example=72.0),
     language: str = Query(default="both", description="Advisory language: 'english', 'hindi', or 'both'")
@@ -433,6 +433,24 @@ async def run_orchestrator(
         raise HTTPException(500, detail=f"Modules not loaded: {MODULES_ERROR}")
     try:
         return orchestrator_instance.process_query(lat, lon, language)
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+
+@app.get("/api/live/map", tags=["Live Map"])
+def live_map(
+    lat: float = Query(default=13.35, description="Map centre latitude", example=13.35),
+    lon: float = Query(default=74.70, description="Map centre longitude", example=74.70),
+    radius_km: float = Query(default=60.0, ge=10, le=100, description="Radius of the live grid in km"),
+):
+    """
+    Live GeoJSON layers (waves, SST, currents, wave warnings, SST-front fishing candidates,
+    restricted zones) from the live data snapshot. Cached ~10 min server-side.
+    Layers with no real feed are listed under `not_connected` rather than faked.
+    """
+    from engine.live_map import build_live_map
+    try:
+        return build_live_map(lat, lon, radius_km)
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 

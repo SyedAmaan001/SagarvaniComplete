@@ -1,7 +1,83 @@
 import { AgentStatus, ConversationTurn, Readout, Alert, EvidenceItem } from "../types";
-import { initialAgents, initialReadouts } from "../mock-data/scenario";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+// ── Live map ────────────────────────────────────────────────────────────────
+
+export interface GeoFeature {
+  type: "Feature";
+  geometry: { type: string; coordinates: any };
+  properties: Record<string, any>;
+}
+export interface GeoCollection {
+  type: "FeatureCollection";
+  features: GeoFeature[];
+}
+
+export interface LiveMap {
+  generated_at: string;
+  center: { lat: number; lon: number };
+  radius_km: number;
+  live: boolean;
+  data_valid_time: string | null;
+  data_age_minutes: number | null;
+  fetched_at: string;
+  refresh_seconds: number;
+  ocean_point_count: number;
+  conditions: {
+    wave_height_m: number | null;
+    wind_kmh: number | null;
+    sst_c: number | null;
+    current_ms: number | null;
+    valid_time: string | null;
+    distance_from_centre_km: number | null;
+  } | null;
+  sources: { name: string; role: string; ok: boolean }[];
+  errors: string[];
+  layers: {
+    waves: GeoCollection;
+    sst: GeoCollection;
+    currents: GeoCollection;
+    wave_warnings: GeoCollection;
+    pfz: GeoCollection;
+    restricted: GeoCollection;
+  };
+  not_connected: { layer: string; needs: string }[];
+}
+
+/** Live conditions + map layers from the backend (cached server-side for ~10 minutes). */
+export async function fetchLiveMap(lat = 13.35, lon = 74.7, radiusKm = 60): Promise<LiveMap | null> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/live/map?lat=${lat}&lon=${lon}&radius_km=${radiusKm}`, {
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as LiveMap;
+  } catch {
+    return null;
+  }
+}
+
+const num = (v: number | null | undefined, digits = 1): string =>
+  v === null || v === undefined ? "—" : String(Number(v.toFixed(digits)));
+
+/** Readout strip values from real numbers only; "—" when a value is missing. */
+export function liveReadouts(map: LiveMap | null): Readout[] {
+  const c = map?.conditions;
+  const seaState = (h: number | null | undefined) =>
+    h === null || h === undefined ? "—" :
+    h < 0.1 ? "Calm" : h < 0.5 ? "Rippled" : h < 1.25 ? "Slight" : h < 2.5 ? "Moderate" :
+    h < 4 ? "Rough" : "Very rough";
+  return [
+    { label: "Sea State", value: seaState(c?.wave_height_m), unit: "" },
+    { label: "Wind Speed", value: num(c?.wind_kmh), unit: "km/h", trend: "stable" },
+    { label: "Wave Height", value: num(c?.wave_height_m, 2), unit: "m", isActive: true, trend: "stable" },
+    { label: "SST Surface", value: num(c?.sst_c), unit: "°C" },
+    { label: "Current", value: num(c?.current_ms, 2), unit: "m/s" },
+  ];
+}
+
+// ── Chat / decision pipeline ────────────────────────────────────────────────
 
 export interface OrcaQueryResponse {
   agent_states: AgentStatus[];
@@ -12,7 +88,7 @@ export interface OrcaQueryResponse {
 }
 
 /**
- * Execute real-time query against the ORCA FastAPI backend.
+ * Execute a query against the ORCA FastAPI backend.
  */
 export async function queryOrca(query: string, sessionId?: string, language: string = "auto"): Promise<OrcaQueryResponse> {
   const payload = {
@@ -37,78 +113,80 @@ export async function queryOrca(query: string, sessionId?: string, language: str
 
   const data = await res.json();
   const pipe = data.pipeline_result;
+  const dataUnavailable = pipe?.execution_status === "DATA_UNAVAILABLE";
 
-  // Extract verdict and decision
+  // Extract verdict and decision. A missing verdict is never treated as "safe".
   const dec = pipe?.decision_package;
-  const verdictRaw = dec?.verdict || "SAFE";
-  const verdict: 'SAFE' | 'CAUTION' | 'HAZARD' | 'ADVISORY' = 
+  const verdictRaw = dec?.verdict || "REASSESS";
+  const verdict: 'SAFE' | 'CAUTION' | 'HAZARD' | 'ADVISORY' =
     verdictRaw === "GO" ? "SAFE" : (verdictRaw === "AVOID" ? "HAZARD" : "CAUTION");
 
-  // Format evidence items
+  // Evidence items come straight from the backend's audit (real timestamps / statuses)
   const evidenceList: EvidenceItem[] = (pipe?.evidence_trail?.evidence_trail || []).map((ev: any) => ({
     source: ev.source || "ORCA Marine Gateway",
-    parameter: ev.parameter || ev.data_point || "Marine Factor",
-    value: String(ev.status || "Verified"),
-    summary: `${ev.data_point || 'Data'}: ${ev.status || 'OK'}`,
-    confidence: "Validated",
-    timestamp: ev.timestamp || new Date().toISOString()
+    parameter: ev.data_point || "Marine Factor",
+    value: String(ev.status || "Unknown"),
+    summary: `${ev.data_point || 'Data'}: ${ev.status || 'Unknown'}`,
+    confidence: ev.verified ? "Validated" : "Unverified",
+    timestamp: ev.timestamp || ""
   }));
 
-  // Build agent states
+  const cond = dec?.conditions || {};
+  const live = !!pipe?.data_status?.live;
+  const agentState: AgentStatus["state"] = live ? 'validated' : 'degraded';
+
   const agentStates: AgentStatus[] = [
     {
       name: 'Marine Data Agent',
       role: 'Ocean Observations',
-      state: 'validated',
-      source: 'INCOIS Ocean Buoy & Forecast Feeds',
-      details: dec?.conditions ? `Wave: ${dec.conditions.wave_m}m, Current: ${dec.conditions.current_knots}kt` : 'Wave spectrum & SST verified.',
-      latency: '42ms'
+      state: agentState,
+      source: 'Open-Meteo Marine (live model data)',
+      details: cond.wave_m !== undefined ? `Wave: ${cond.wave_m}m, SST: ${cond.sst_c ?? '—'}°C` : 'No live marine data.',
     },
     {
       name: 'Weather Agent',
       role: 'Atmospheric Context',
-      state: 'validated',
-      source: 'IMD Coastal Doppler & Open-Meteo',
-      details: dec?.conditions ? `Wind: ${dec.conditions.wind_kmh} km/h` : 'Atmospheric conditions validated.',
-      latency: '68ms'
+      state: agentState,
+      source: 'Open-Meteo Weather (live)',
+      details: cond.wind_kmh !== undefined ? `Wind: ${cond.wind_kmh} km/h` : 'No live wind data.',
     },
     {
       name: 'GIS Agent',
       role: 'Geospatial Layering',
       state: 'validated',
-      source: 'ISRO Bhuvan / Bhoonidhi',
-      details: pipe?.cartography ? `Route corridor: ${pipe.cartography.distance_km || 35} km` : 'Spatial boundaries aligned.',
-      latency: '85ms'
+      source: 'Curated geofence layer (static)',
+      details: pipe?.cartography ? `Route: ${pipe.cartography.distance_km ?? 0} km` : 'Spatial boundaries loaded.',
     },
     {
       name: 'Ocean Analytics Agent',
-      role: 'Multi-Sensor Analytics',
-      state: 'validated',
-      source: 'MOSDAC & In-situ Archive',
-      details: 'Thermal front & Chlorophyll productivity evaluated.',
-      latency: '94ms'
+      role: 'Thermal-front detection',
+      state: agentState,
+      source: 'SST gradient from live model grid',
+      details: `${pipe?.candidate_pfz_count ?? 0} candidate front(s); chlorophyll feed not connected.`,
     },
     {
       name: 'Risk Agent',
       role: 'Decision Safety Analysis',
-      state: 'validated',
+      state: live ? 'validated' : 'degraded',
       source: 'ORCA Risk Engine & Gate',
-      details: `Safety score: ${dec?.safety_score || 85}/100. Gate: ${dec?.safety_gate || 'PASSED'}`,
-      latency: '110ms'
+      details: dec ? `Safety score: ${dec.safety_score}/100. Gate: ${dec.safety_gate}` : 'No decision available.',
     },
     {
       name: 'Spatial Reasoning Agent',
       role: 'Topological Reasoning',
       state: 'validated',
       source: 'ORCA Spatial Knowledge Engine',
-      details: 'Navigational buffer & safe return corridor cleared.',
-      latency: '124ms'
+      details: dec?.restricted_intersections
+        ? `Route crosses ${dec.restricted_intersections} restricted zone(s)!`
+        : 'Route clear of restricted zones.',
     }
   ];
 
   // Extract response text
   const adv = pipe?.multilingual_advisory;
-  const advisoryText = adv?.regional || adv?.english || dec?.why || "Advisory generated by ORCA Decision Engine.";
+  const advisoryText = adv?.regional || adv?.english || dec?.why || "No advisory could be generated.";
+
+  const confidencePct = typeof dec?.confidence === "number" ? `${Math.round(dec.confidence * 100)}%` : "—";
 
   const turn: ConversationTurn = {
     id: `turn-sag-${Date.now()}`,
@@ -120,37 +198,40 @@ export async function queryOrca(query: string, sessionId?: string, language: str
       verdict: verdict,
       headline: `${dec?.recommended_zone || 'Marine Area'} — ${verdictRaw}`,
       summary: dec?.why || advisoryText,
-      confidenceScore: `${dec?.safety_score || 88}%`,
-      validationState: 'validated',
+      confidenceScore: confidencePct,
+      validationState: live ? 'validated' : 'degraded',
       evidence: evidenceList
     },
     evidence: evidenceList,
-    validationTrace: [
-      "1. Parsed natural query context & vessel specifications.",
-      "2. Retrieved authoritative INCOIS, MOSDAC & IMD datasets.",
-      "3. Evaluated deterministic Hard Safety Gate & SVA vessel matrices.",
-      "4. Generated optimal route and synthesized multilingual advisory."
-    ]
+    validationTrace: (pipe?.steps_trace || []).map((s: any) => `${s.step}. ${s.name}: ${s.detail}`)
   };
 
-  // Build live readouts
-  const cond = dec?.conditions || {};
   const readouts: Readout[] = [
-    { label: 'Sea State', value: cond.sea_state || '2', unit: 'Slight' },
-    { label: 'Wind Speed', value: String(cond.wind_kmh || '18'), unit: 'km/h', trend: 'stable' },
-    { label: 'Wave Height', value: String(cond.wave_m || '1.3'), unit: 'm', isActive: true, trend: 'stable' },
-    { label: 'SST Surface', value: '28.4', unit: '°C' },
-    { label: 'Safety Score', value: `${dec?.safety_score || 88}`, unit: '/100', trend: 'up' },
+    { label: 'Sea State', value: cond.sea_state ?? '—', unit: '' },
+    { label: 'Wind Speed', value: num(cond.wind_kmh), unit: 'km/h', trend: 'stable' },
+    { label: 'Wave Height', value: num(cond.wave_m, 2), unit: 'm', isActive: true, trend: 'stable' },
+    { label: 'SST Surface', value: num(cond.sst_c), unit: '°C' },
+    { label: 'Safety Score', value: dec ? String(dec.safety_score) : '—', unit: '/100' },
   ];
 
   const alerts: Alert[] = [];
-  if (verdict === "HAZARD") {
+  if (verdict === "HAZARD" || dataUnavailable) {
     alerts.push({
       id: `alert-${Date.now()}`,
       type: 'danger',
-      title: 'Marine Hazard Warning',
+      title: dataUnavailable ? 'Live Data Unavailable' : 'Marine Hazard Warning',
       message: dec?.why || 'Hazardous sea conditions detected for specified craft.',
       source: 'ORCA Risk Engine',
+      timestamp: new Date().toLocaleTimeString()
+    });
+  }
+  if (dec?.route_warning) {
+    alerts.push({
+      id: `alert-route-${Date.now()}`,
+      type: 'danger',
+      title: 'Route Warning',
+      message: dec.route_warning,
+      source: 'ORCA Spatial Engine',
       timestamp: new Date().toLocaleTimeString()
     });
   }

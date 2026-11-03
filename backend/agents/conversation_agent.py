@@ -368,6 +368,7 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
         wind_kmh = decision_summary.get("wind_kmh", 22.0)
         vessel = decision_summary.get("vessel", "Motorized Craft")
         why = decision_summary.get("why", "Sea conditions within safe envelope; highest chlorophyll front at target.")
+        zones_txt = ", ".join(decision_summary.get("avoided_zones") or [])
 
         # Built-in high quality translations for coastal languages
         if target_lang == "kn":
@@ -376,10 +377,12 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
                 f"ನಿರ್ಧಾರ: {v_text}\n"
                 f"• ಅತ್ಯುತ್ತಮ ವಲಯ: {best_zone} (ದೂರ: {route_km} ಕಿ.ಮೀ)\n"
                 f"• ಸುರಕ್ಷತೆ: {safety_score}/100 | ಮೀನುಗಾರಿಕಾ ಮೌಲ್ಯ: {fishing_score}/100\n"
-                f"• ಸಮುದ್ರ ಸ್ಥಿತಿ: ಅಲೆಗಳು {wave_h} ಮೀ, ಗಾಳಿ {wind_kmh} ಕಿ.ಮೀ/ಗಂ ({vessel} ಗೆ ಸುರಕ್ಷಿತ).\n"
+                f"• ಸಮುದ್ರ ಸ್ಥಿತಿ: ಅಲೆಗಳು {wave_h} ಮೀ, ಗಾಳಿ {wind_kmh} ಕಿ.ಮೀ/ಗಂ ({vessel}).\n"
                 f"• ಕಾರಣ: {why}\n"
-                f"• ರಕ್ಷಿತ ಪ್ರದೇಶ: ನೇತ್ರಾಣಿ ನೇವಲ್ & ಕೋರಲ್ ರಕ್ಷಿತ ವಲಯವನ್ನು ನಿಮ್ಮ ಮಾರ್ಗದಿಂದ ಹೊರಗಿಡಲಾಗಿದೆ."
             )
+            if zones_txt:
+                msg = msg + f"• ರಕ್ಷಿತ ಪ್ರದೇಶ: {zones_txt} ವಲಯವನ್ನು ನಿಮ್ಮ ಮಾರ್ಗದಿಂದ ಹೊರಗಿಡಲಾಗಿದೆ."
+            msg = msg.rstrip()
             return {"title": f"ಸಾಗರವಾಣಿ - ORCA ಸಲಹೆ ({v_text})", "body": msg, "lang": "kn"}
 
         elif target_lang == "hi":
@@ -388,10 +391,12 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
                 f"निर्णय: {v_text}\n"
                 f"• सर्वश्रेष्ठ मछली पकड़ने का क्षेत्र: {best_zone} (दूरी: {route_km} किमी)\n"
                 f"• सुरक्षा स्कोर: {safety_score}/100 | उत्पादकता: {fishing_score}/100\n"
-                f"• समुद्र की स्थिति: लहरें {wave_h} मी, हवा {wind_kmh} किमी/घंटा ({vessel} के लिए सुरक्षित)।\n"
+                f"• समुद्र की स्थिति: लहरें {wave_h} मी, हवा {wind_kmh} किमी/घंटा ({vessel})।\n"
                 f"• कारण: {why}\n"
-                f"• प्रतिबंधित क्षेत्र: नेत्राणी अभयारण्य को सुरक्षित नेविगेशन मार्ग से बाहर रखा गया है।"
             )
+            if zones_txt:
+                msg = msg + f"• प्रतिबंधित क्षेत्र: {zones_txt} को सुरक्षित नेविगेशन मार्ग से बाहर रखा गया है।"
+            msg = msg.rstrip()
             return {"title": f"सागरवाणी - ORCA सलाह ({v_text})", "body": msg, "lang": "hi"}
 
         elif target_lang == "ta":
@@ -400,10 +405,12 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
                 f"முடிவு: {v_text}\n"
                 f"• சிறந்த மீன்பிடி மண்டலம்: {best_zone} (தொலைவு: {route_km} கி.மீ)\n"
                 f"• பாதுகாப்பு: {safety_score}/100 | மீன்பிடி மதிப்பு: {fishing_score}/100\n"
-                f"• கடல் நிலை: அலை {wave_h} மீ, காற்று {wind_kmh} கி.மீ/மணி ({vessel} க்கு உகந்தது).\n"
+                f"• கடல் நிலை: அலை {wave_h} மீ, காற்று {wind_kmh} கி.மீ/மணி ({vessel}).\n"
                 f"• காரணம்: {why}\n"
-                f"• தடைசெய்யப்பட்ட பகுதி: நேத்ராணி பவளப்பாறை பகுதி தவிர்க்கப்பட்டுள்ளது."
             )
+            if zones_txt:
+                msg = msg + f"• தடைசெய்யப்பட்ட பகுதி: {zones_txt} தவிர்க்கப்பட்டுள்ளது."
+            msg = msg.rstrip()
             return {"title": f"சாகர்வாணி - ORCA ஆலோசனை ({v_text})", "body": msg, "lang": "ta"}
 
         elif target_lang == "te":
@@ -412,10 +419,12 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
                 f"నిర్ణయం: {v_text}\n"
                 f"• ఉత్తమ జోన్: {best_zone} (దూరం: {route_km} కి.మీ)\n"
                 f"• భద్రతా స్కోరు: {safety_score}/100 | ఉత్పాదకత: {fishing_score}/100\n"
-                f"• సముద్ర పరిస్థితి: అలల ఎత్తు {wave_h} మీ, గాలి {wind_kmh} కి.మీ/గం ({vessel} కు అనుకూలం).\n"
+                f"• సముద్ర పరిస్థితి: అలల ఎత్తు {wave_h} మీ, గాలి {wind_kmh} కి.మీ/గం ({vessel}).\n"
                 f"• కారణం: {why}\n"
-                f"• నిషేధిత ప్రాంతం: నేత్రాని సంరక్షణ ప్రాంతం మీ మార్గం నుండి మినహాయించబడింది."
             )
+            if zones_txt:
+                msg = msg + f"• నిషేధిత ప్రాంతం: {zones_txt} మీ మార్గం నుండి మినహాయించబడింది."
+            msg = msg.rstrip()
             return {"title": f"సాగరవాణి - ORCA సలహా ({v_text})", "body": msg, "lang": "te"}
 
         elif target_lang == "ml":
@@ -424,10 +433,12 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
                 f"തീരുമാനം: {v_text}\n"
                 f"• മികച്ച മീൻപിടുത്ത മേഖല: {best_zone} (ദൂരം: {route_km} കി.മീ)\n"
                 f"• സുരക്ഷ: {safety_score}/100 | ഉൽപാദനക്ഷമത: {fishing_score}/100\n"
-                f"• സമുദ്രാവസ്ഥ: തിരമാല {wave_h} മീ, കാറ്റ് {wind_kmh} കി.മീ/മണിക്കൂർ ({vessel} സുരക്ഷിതം).\n"
+                f"• സമുദ്രാവസ്ഥ: തിരമാല {wave_h} മീ, കാറ്റ് {wind_kmh} കി.മീ/മണിക്കൂർ ({vessel}).\n"
                 f"• കാരണം: {why}\n"
-                f"• സംരക്ഷിത മേഖല: നേത്രാണി പവിഴപ്പുറ്റ് പ്രദേശം ഒഴിവാക്കിയിരിക്കുന്നു."
             )
+            if zones_txt:
+                msg = msg + f"• സംരക്ഷിത മേഖല: {zones_txt} ഒഴിവാക്കിയിരിക്കുന്നു."
+            msg = msg.rstrip()
             return {"title": f"സാഗർവാണി - ORCA ഉപദേശം ({v_text})", "body": msg, "lang": "ml"}
 
         # Default English
@@ -436,8 +447,10 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
             f"RECOMMENDATION: {v_text}\n"
             f"• Best Zone: {best_zone} ({route_km} km)\n"
             f"• Safety Score: {safety_score}/100 | Fishing Value: {fishing_score}/100\n"
-            f"• Sea State: Wave Height {wave_h}m, Wind {wind_kmh} km/h (Safe for {vessel}).\n"
+            f"• Sea State: Wave Height {wave_h}m, Wind {wind_kmh} km/h ({vessel}).\n"
             f"• Why: {why}\n"
-            f"• Geofence Notice: Netrani Naval & Coral Sanctuary strictly bypassed with safe navigation detour."
         )
+        if zones_txt:
+            msg = msg + f"• Geofence Notice: {zones_txt} avoided on the computed route."
+        msg = msg.rstrip()
         return {"title": f"SAGARVANI - ORCA Advisory ({v_text})", "body": msg, "lang": "en"}

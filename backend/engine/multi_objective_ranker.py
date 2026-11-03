@@ -32,8 +32,10 @@ class MultiObjectiveRanker:
             dist_penalty = min(40.0, dist_km * 0.8) # 8 points penalty per 10km
             
             # 3. Chlorophyll-a bonus (mg/m3)
-            chla = cand.get("chlorophyll_mg_m3", 1.0)
-            chla_bonus = min(15.0, chla * 8.0)
+            # No chlorophyll feed is connected yet: a missing value earns no bonus
+            # (it is not assumed to be average).
+            chla = cand.get("chlorophyll_mg_m3")
+            chla_bonus = min(15.0, chla * 8.0) if chla is not None else 0.0
 
             # 4. Composite Utility Function
             utility_score = (0.50 * fish_score) + chla_bonus - dist_penalty + 15.0
@@ -41,7 +43,7 @@ class MultiObjectiveRanker:
 
             entry = dict(cand)
             entry["rank_score"] = utility_score
-            entry["recommended_departure_window"] = "05:30 AM – 09:30 AM IST (Optimal Morning Ebb Tide)"
+            entry["recommended_departure_window"] = None  # filled by the pipeline from the hourly forecast
             entry["fuel_estimate_liters"] = round(dist_km * 0.45, 1) # Estimated liters for standard OBM
             ranked_list.append(entry)
 
