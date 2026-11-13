@@ -21,9 +21,29 @@ import { MapLayer } from "@/lib/types";
 function MapViewController({ coords, zoom }: { coords?: [number, number]; zoom?: number }) {
   const map = useMap();
   useEffect(() => {
-    if (coords && coords.every(Number.isFinite) && coords[0] >= -90 && coords[0] <= 90 && coords[1] >= -180 && coords[1] <= 180) {
-      map.flyTo(coords, Number.isFinite(zoom) ? zoom || 9 : 9, { duration: 1.2 });
+    if (!(coords && coords.every(Number.isFinite) && coords[0] >= -90 && coords[0] <= 90 && coords[1] >= -180 && coords[1] <= 180)) return;
+    const target = coords;
+    const fly = () => map.flyTo(target, Number.isFinite(zoom) ? zoom || 9 : 9, { duration: 1.2 });
+    const hasSize = () => {
+      const s = map.getSize();
+      return s.x > 0 && s.y > 0;
+    };
+    if (hasSize()) {
+      fly();
+      return;
     }
+    // The map container is hidden (e.g. the mobile layout shows another tab) so Leaflet
+    // measures 0x0 and flyTo would produce NaN. Wait until it becomes visible.
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize();
+      if (hasSize()) {
+        observer.disconnect();
+        fly();
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
   }, [coords, zoom, map]);
   return null;
 }
