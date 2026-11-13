@@ -36,6 +36,12 @@ export type ConversationTurn = {
   evidence?: EvidenceItem[];
   intent?: string;
   validationTrace?: string[];
+  /** true when part of the answer relies on demo/static reference data (never live) */
+  usesMockData?: boolean;
+  mockComponents?: string[];
+  isError?: boolean;
+  /** how the user's text was captured */
+  viaVoice?: boolean;
 };
 
 export type Readout = {

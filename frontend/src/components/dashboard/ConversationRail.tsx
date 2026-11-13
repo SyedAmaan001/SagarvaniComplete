@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { ConversationTurn } from "@/lib/types";
-import { Send, FileText, FileCheck, Mic, Sparkles, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Layers } from "lucide-react";
+import { Send, FileText, FileCheck, Mic, Sparkles, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Layers, Volume2, VolumeX, Square } from "lucide-react";
+import { useSpeech, speak, stopSpeech, setVoiceReplies } from "@/lib/speech";
 import { motion, AnimatePresence } from "framer-motion";
 import { VoiceModal } from "./VoiceModal";
 
 interface ConversationRailProps {
   turns: ConversationTurn[];
-  onAsk: (q: string) => void;
+  onAsk: (q: string, viaVoice?: boolean) => void;
   isTyping: boolean;
   onSelectScenario: (scenarioId: string) => void;
   activeScenarioId?: string;
@@ -23,6 +24,8 @@ export function ConversationRail({
 }: ConversationRailProps) {
   const [inputVal, setInputVal] = useState("");
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const speech = useSpeech();
+  const [speakingTurnId, setSpeakingTurnId] = useState<string | null>(null);
   const [expandedEvidence, setExpandedEvidence] = useState<{ [turnId: string]: boolean }>({});
 
   const toggleEvidence = (turnId: string) => {
@@ -48,7 +51,20 @@ export function ConversationRail({
             Conversational Intelligence Rail
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => (speech.status === "speaking" || speech.status === "loading" ? stopSpeech() : setVoiceReplies(!speech.voiceReplies))}
+            className={`flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-mono transition-colors ${
+              speech.status === "speaking" || speech.status === "loading"
+                ? "border-danger/50 text-danger"
+                : speech.voiceReplies ? "border-primary/40 text-primary" : "border-border text-text-secondary"
+            }`}
+            title={speech.status === "speaking" || speech.status === "loading" ? "Stop speaking" : speech.voiceReplies ? "Voice replies on (click to mute)" : "Voice replies muted (click to enable)"}
+            aria-label={speech.status === "speaking" || speech.status === "loading" ? "Stop speaking" : speech.voiceReplies ? "Mute voice replies" : "Enable voice replies"}
+          >
+            {speech.status === "speaking" || speech.status === "loading" ? <Square className="size-3 fill-current" /> : speech.voiceReplies ? <Volume2 className="size-3" /> : <VolumeX className="size-3" />}
+            <span>{speech.status === "speaking" ? (speech.kind === "provider" ? "AI voice" : "Browser voice") : speech.status === "loading" ? "..." : speech.voiceReplies ? "Voice on" : "Muted"}</span>
+          </button>
           <span className="size-2 rounded-full bg-primary animate-pulse" />
           <span className="font-mono text-[10px] text-primary font-bold">ORCA ACTIVE</span>
         </div>
@@ -128,6 +144,7 @@ export function ConversationRail({
                       USER QUERY
                     </span>
                     <p className="text-xs leading-relaxed font-medium">{turn.text}</p>
+                    {turn.viaVoice && <span className="text-[9px] font-mono text-text-secondary mt-1 block">via voice</span>}
                   </div>
                 ) : (
                   /* Sagarvani System Response Bubble */
@@ -152,9 +169,32 @@ export function ConversationRail({
                     </div>
 
                     {/* Main Body */}
-                    <p className="text-xs text-text-primary leading-relaxed">
+                    <p className={`text-xs leading-relaxed ${turn.isError ? "text-danger" : "text-text-primary"}`} role={turn.isError ? "alert" : undefined}>
                       {turn.text}
                     </p>
+
+                    {turn.usesMockData && (
+                      <p className="rounded-md bg-warning/10 border border-warning/30 px-2 py-1.5 text-[10px] leading-snug text-warning">
+                        Not all data here is live: {(turn.mockComponents && turn.mockComponents.join("; ")) || "includes demo or static reference data"}.
+                      </p>
+                    )}
+
+                    {!turn.isError && (
+                      <div className="flex items-center gap-2 text-[10px] font-mono">
+                        <button
+                          onClick={() => {
+                            if (speakingTurnId === turn.id && speech.status !== "idle") { stopSpeech(); setSpeakingTurnId(null); }
+                            else { setSpeakingTurnId(turn.id); void speak(turn.text); }
+                          }}
+                          className="flex items-center gap-1 text-primary hover:underline"
+                          aria-label={speakingTurnId === turn.id && speech.status !== "idle" ? "Stop speaking" : "Listen to this answer"}
+                        >
+                          {speakingTurnId === turn.id && speech.status !== "idle" ? <Square className="size-3 fill-current" /> : <Volume2 className="size-3" />}
+                          <span>{speakingTurnId === turn.id && speech.status !== "idle" ? "Stop" : "Listen"}</span>
+                        </button>
+                        {speakingTurnId === turn.id && speech.message && <span className="text-text-secondary">{speech.message}</span>}
+                      </div>
+                    )}
 
                     {/* Evidence Drawer Toggle */}
                     {turn.evidence && turn.evidence.length > 0 && (
@@ -260,7 +300,7 @@ export function ConversationRail({
       <VoiceModal
         isOpen={isVoiceOpen}
         onClose={() => setIsVoiceOpen(false)}
-        onSubmitTranscript={(q) => onAsk(q)}
+        onSubmitTranscript={(q) => onAsk(q, true)}
       />
     </div>
   );

@@ -55,7 +55,7 @@ export function Hero() {
       opacity={0.96}
       reveal={true}
       revealDuration={1.3}
-      subtitle="Built for Smart India Hackathon 2026 · Problem Statement SIH26176"
+      subtitle="Conversational marine intelligence for safer decisions"
       title="Marine Intelligence, One Conversation Away"
       description="Sagarvani understands your question, gathers ocean, weather, and geospatial data, and reasons across every source to deliver a validated, explainable recommendation — accessible from smartphones to simple helplines."
     >

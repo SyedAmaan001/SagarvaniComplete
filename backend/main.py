@@ -19,17 +19,41 @@ Endpoints:
 """
 
 import os
+import math
 import sys
+import time
+import uuid
+import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Query, Body, UploadFile, File
+from fastapi import FastAPI, HTTPException, Query, Body, UploadFile, File, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from utils.config import load_settings
+from schemas import ChatResponse, ChatError, STTResponse, TTSRequest, TTSResponse
+from services.session_store import SessionStore
+from services import stt_service, tts_service
+from services.stt_service import AudioValidationError, STTError
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("sagarvani.api")
+
+settings = load_settings()
+for _w in settings.warnings:
+    logger.warning("config: %s", _w)
+session_store = SessionStore(redis_url=settings.redis_url, ttl_seconds=settings.session_ttl_seconds)
 
 # ─── App Initialisation ────────────────────────────────────────────────────────
 app = FastAPI(
@@ -46,16 +70,76 @@ app = FastAPI(
 )
 
 # ─── CORS (allow frontend to call this API) ───────────────────────────────────
-cors_origins_env = os.getenv("CORS_ORIGINS", "*")
-origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-
+# CORS_ORIGINS="*" allows any origin; otherwise the listed origins are ADDED to the
+# built-in defaults (localhost dev + deployed Railway frontend). No cookies are
+# used, so credentials stay disabled (required for wildcard origins anyway).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if settings.cors_allow_all else settings.cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+
+
+class ApiError(Exception):
+    """Expected, user-facing error with a stable machine-readable code."""
+
+    def __init__(self, status_code: int, code: str, message: str):
+        super().__init__(message)
+        self.status_code, self.code, self.message = status_code, code, message
+
+
+def _rid(request: Request) -> str:
+    return getattr(request.state, "request_id", "-")
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    rid = (request.headers.get("x-request-id") or uuid.uuid4().hex[:12])[:64]
+    request.state.request_id = rid
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("[%s] unhandled error on %s %s", rid, request.method, request.url.path)
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "code": "internal_error", "request_id": rid},
+        )
+    ms = (time.perf_counter() - start) * 1000
+    response.headers["X-Request-ID"] = rid
+    logger.info("[%s] %s %s -> %s (%.0f ms)", rid, request.method, request.url.path, response.status_code, ms)
+    return response
+
+
+@app.exception_handler(ApiError)
+async def api_error_handler(request: Request, exc: ApiError):
+    return JSONResponse(status_code=exc.status_code,
+                        content={"detail": exc.message, "code": exc.code, "request_id": _rid(request)})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    if exc.status_code >= 500:
+        logger.error("[%s] %s: %s", _rid(request), exc.status_code, detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail, "request_id": _rid(request)})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    problems = "; ".join(f"{'.'.join(str(x) for x in e['loc'] if x != 'body')}: {e['msg']}" for e in exc.errors())
+    return JSONResponse(status_code=422, content={"detail": f"Invalid request - {problems}", "code": "validation_error",
+                                                  "request_id": _rid(request)})
+
+
+def _validate_coordinates(lat: float, lon: float) -> None:
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        raise HTTPException(status_code=422, detail="Latitude and longitude must be finite numbers")
+    if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise HTTPException(status_code=422, detail="Latitude or longitude is out of range")
 
 # ─── Import modules (lazy to avoid startup errors if packages missing) ─────────
 def _import_modules():
@@ -87,6 +171,17 @@ try:
 except Exception as e:
     MODULES_OK = False
     MODULES_ERROR = str(e)
+    logger.exception("Module import failed - API will run in degraded mode")
+
+conversation_engine = None
+try:
+    from services.conversation_engine import ConversationEngine
+    conversation_engine = ConversationEngine(session_store, settings)
+except Exception as e:  # pragma: no cover - import problems are reported via /ready
+    ENGINE_ERROR = str(e)
+    logger.exception("Conversation engine failed to initialise")
+else:
+    ENGINE_ERROR = None
 
 
 # ─── Pydantic Request/Response Models ─────────────────────────────────────────
@@ -94,10 +189,12 @@ except Exception as e:
 class ChatRequest(BaseModel):
     query: str = Field(
         ...,
-        description="Natural language question from fisherman",
-        example="I have a 5 m boat. Can I leave Malpe at 5 AM tomorrow and fish within 30 km?"
+        min_length=1,
+        max_length=settings.max_query_chars,
+        description="Natural language question (typed, or recognised from speech)",
+        examples=["I have a 5 m boat. Can I leave Malpe at 5 AM tomorrow and fish within 30 km?"]
     )
-    session_id: Optional[str] = Field(default="default_session", description="Conversation session ID for multi-turn memory")
+    session_id: Optional[str] = Field(default=None, max_length=128, description="Conversation ID for multi-turn memory (generated if omitted)")
     language_override: Optional[str] = Field(default="auto", description="Language override code: auto, en, kn, hi, ta, te, ml, etc.")
     execute_pipeline: Optional[bool] = Field(default=True, description="Whether to execute the full 10-step pipeline")
 
@@ -180,6 +277,33 @@ async def root():
     }
 
 
+@app.get("/health", tags=["System"])
+@app.get("/api/health", tags=["System"])
+async def health():
+    """Liveness probe: the process is up and serving requests."""
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/ready", tags=["System"])
+@app.get("/api/ready", tags=["System"])
+async def ready():
+    """Readiness probe: modules loaded and the conversation engine is usable.
+    Redis being down is reported but does not fail readiness (in-memory fallback)."""
+    checks = {
+        "modules": {"ok": MODULES_OK, "error": MODULES_ERROR},
+        "conversation_engine": {"ok": conversation_engine is not None, "error": ENGINE_ERROR},
+        "sessions": session_store.status(),
+        "voice": {"stt_mode": settings.effective_stt_mode, "tts_mode": settings.effective_tts_mode},
+        "data_mode": settings.data_mode,
+    }
+    is_ready = MODULES_OK and conversation_engine is not None
+    return JSONResponse(
+        status_code=200 if is_ready else 503,
+        content={"status": "ready" if is_ready else "not_ready", "checks": checks,
+                 "timestamp": datetime.now(timezone.utc).isoformat()},
+    )
+
+
 @app.get("/api/status", tags=["System"])
 async def system_status():
     """Full system status: API keys, datasets, module health."""
@@ -205,6 +329,11 @@ async def system_status():
         "api_keys": env_check,
         "missing_keys": missing,
         "key_coverage": f"{len(env_check) - len(missing)}/{len(env_check)} keys set",
+        "sarvam_key_configured": settings.sarvam_configured,
+        "voice": {"stt_mode": settings.effective_stt_mode, "tts_mode": settings.effective_tts_mode},
+        "data_mode": settings.data_mode,
+        "sessions": session_store.status(),
+        "config": settings.public_report(),
         "python_version": sys.version,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -243,97 +372,139 @@ async def interpret_query_endpoint(req: ChatRequest):
         raise HTTPException(500, detail=str(e))
 
 
-@app.post("/api/orca/stt", tags=["Step 2: Voice STT"])
-async def voice_stt_endpoint(file: UploadFile = File(...)):
+@app.post("/api/orca/stt", response_model=STTResponse, tags=["Step 2: Voice STT"])
+async def voice_stt_endpoint(request: Request, file: UploadFile = File(...)):
     """
-    Step 2: Voice Speech-to-Text & Translate Endpoint:
-    - Accepts microphone audio recorded in any Indian regional language.
-    - Translates and transcribes using Sarvam AI saaras:v3 model.
-    - Extracts MarineIntentSchema and returns complete interpretation.
+    Speech-to-text. Accepts a browser recording (webm/ogg/wav/mp3/mp4/aac/flac).
+    Returns the transcript plus `mode` ("real" = provider transcription,
+    "mock" = labelled demo text that is NOT what the user said).
     """
-    if not MODULES_OK or interpreter_instance is None:
-        raise HTTPException(500, detail=f"Interpreter module not loaded: {MODULES_ERROR}")
+    data = await file.read(settings.max_audio_bytes + 1)
     try:
-        audio_bytes = await file.read()
-        res = interpreter_instance.process_voice_audio(
-            audio_bytes=audio_bytes,
-            filename=file.filename or "recording.wav"
-        )
-        return res
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
+        ctype = stt_service.validate_audio(file.filename, file.content_type, data, settings)
+    except AudioValidationError as e:
+        raise ApiError(e.status_code, e.code, e.message)
+    try:
+        res = await run_in_threadpool(stt_service.transcribe, data, file.filename, ctype, settings)
+    except STTError as e:
+        raise ApiError(502, "stt_failed", str(e))
+    return STTResponse(
+        request_id=_rid(request), text=res.text, mode=res.mode, is_mock=res.is_mock, provider=res.provider,
+        status=res.status, bytes_received=res.bytes_received, duration_sec_estimate=res.duration_sec_estimate,
+        warning=res.warning,
+    )
 
 
-@app.post("/api/orca/chat", tags=["Conversational ORCA & Pipeline"])
-async def conversational_orca(req: ChatRequest):
+@app.post("/api/orca/tts", response_model=TTSResponse, tags=["Voice TTS"])
+async def text_to_speech_endpoint(request: Request, body: TTSRequest):
     """
-    Conversational ORCA Agent Endpoint (Steps 1-10):
-    - Step 1: User Query (Text or Voice Transcription)
-    - Step 2: Interpreter (Sarvam AI translation + MarineIntentSchema extraction)
-    - Step 3-10: Complete Safe Decision Loop (Plan -> Retrieve -> Normalize -> Reason -> Constrain -> Rank -> Verify -> Respond)
+    Text-to-speech. mode="provider" returns base64 audio per text chunk;
+    mode="browser" tells the client to speak the chunks with speechSynthesis.
     """
-    if not MODULES_OK or orca_pipeline_instance is None or conversation_agent_instance is None:
-        raise HTTPException(500, detail=f"Modules not loaded: {MODULES_ERROR}")
+    if len(body.text) > settings.max_tts_chars:
+        raise ApiError(413, "text_too_long", f"Text is {len(body.text)} characters; limit is {settings.max_tts_chars}.")
     try:
-        # Step 2: Run query through the Interpreter module
-        interpretation = None
-        if interpreter_instance is not None:
+        res = await run_in_threadpool(tts_service.synthesize, body.text, body.language, body.voice, settings)
+    except ValueError as e:
+        raise ApiError(422, "nothing_to_speak", str(e))
+    return TTSResponse(
+        request_id=_rid(request), mode=res.mode, is_provider_audio=res.is_provider_audio, provider=res.provider,
+        language=res.language, chunks=res.chunks, audio_base64=res.audio_base64, mime_type=res.mime_type,
+        warning=res.warning,
+    )
+
+
+@app.post("/api/orca/chat", response_model=ChatResponse, tags=["Conversational ORCA & Pipeline"])
+def conversational_orca(req: ChatRequest, request: Request):
+    """
+    Conversational ORCA endpoint.
+      1. Conversation engine classifies the intent and keeps per-conversation context.
+      2. General / weather / sea-condition questions are answered directly from live feeds.
+      3. Marine-safety decisions (and only with a known location) run the existing
+         Interpreter -> ConversationAgent -> 10-step ORCA pipeline.
+    """
+    if not MODULES_OK or orca_pipeline_instance is None or conversation_agent_instance is None or conversation_engine is None:
+        raise ApiError(503, "not_ready", f"Service not ready: {MODULES_ERROR or ENGINE_ERROR or 'modules not loaded'}")
+
+    rid = _rid(request)
+    query = req.query.strip()
+    if not query:
+        raise ApiError(422, "empty_query", "The question is empty.")
+    cid = req.session_id or f"conv_{uuid.uuid4().hex[:12]}"
+
+    result = conversation_engine.respond(query, cid)
+
+    parse_result = None
+    pipeline_output = None
+    interpretation = None
+    errors: List[ChatError] = [ChatError(**e) for e in result.errors]
+    status = result.status
+
+    if result.needs_pipeline:
+        try:
             try:
-                interpretation = interpreter_instance.interpret(
-                    query=req.query,
-                    language=req.language_override
-                )
+                interpretation = interpreter_instance.interpret(query=query, language=req.language_override) if interpreter_instance else None
             except Exception:
-                pass
+                logger.exception("[%s] interpreter failed; continuing with rule-based context", rid)
 
-        # Parse query & extract understanding chips
-        parse_result = conversation_agent_instance.parse_query(
-            query=req.query,
-            session_id=req.session_id or "default_session",
-            language_override=req.language_override
-        )
-        ctx = parse_result["active_context"]
-
-        # Merge Interpreter structured findings if present
-        if interpretation:
-            if interpretation.get("mapped_intent"):
-                parse_result["intent"] = interpretation["mapped_intent"]
-            if interpretation.get("location_name") and interpretation["location_name"] != "Malpe":
-                ctx["location_name"] = interpretation["location_name"]
-                ctx["lat"] = interpretation["lat"]
-                ctx["lon"] = interpretation["lon"]
-            if interpretation.get("vessel_type"):
-                ctx["vessel_type"] = interpretation["vessel_type"]
-            if interpretation.get("departure_time") and interpretation["departure_time"] != "Tomorrow 05:00 AM":
-                ctx["departure_time"] = interpretation["departure_time"]
-
-        # Step 3-10: Execute pipeline if requested
-        pipeline_output = None
-        if req.execute_pipeline:
-            pipeline_output = orca_pipeline_instance.run(
-                lat=ctx["lat"],
-                lon=ctx["lon"],
-                vessel_type=ctx["vessel_type"],
-                language=parse_result["target_language"],
-                user_intent=parse_result["intent"],
-                departure_time=ctx["departure_time"],
-                max_range_km=ctx["range_km"]
+            parse_result = conversation_agent_instance.parse_query(
+                query=query, session_id=cid, language_override=req.language_override
             )
+            ctx = parse_result["active_context"]
+            loc = result.location
+            ctx.update({"location_name": loc["name"], "lat": loc["lat"], "lon": loc["lon"]})
+            if interpretation:
+                if interpretation.get("mapped_intent"):
+                    parse_result["intent"] = interpretation["mapped_intent"]
+                if interpretation.get("vessel_type") and interpretation["intent_schema"].get("vessel_type"):
+                    ctx["vessel_type"] = interpretation["vessel_type"]
+                if interpretation["intent_schema"].get("date"):
+                    ctx["departure_time"] = interpretation["departure_time"]
+            _validate_coordinates(float(ctx["lat"]), float(ctx["lon"]))
 
-        return {
-            "session_id": parse_result["session_id"],
-            "query": parse_result["query"],
-            "english_query": interpretation.get("english_query") if interpretation else parse_result["query"],
-            "detected_language": parse_result["detected_language"],
-            "target_language": parse_result["target_language"],
-            "intent": parse_result["intent"],
-            "intent_schema": interpretation.get("intent_schema") if interpretation else None,
-            "understanding_chips": parse_result["understanding_chips"],
-            "active_context": ctx,
-            "pipeline_result": pipeline_output
-        }
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
+            if req.execute_pipeline:
+                pipeline_output = orca_pipeline_instance.run(
+                    lat=ctx["lat"], lon=ctx["lon"], vessel_type=ctx["vessel_type"],
+                    language=parse_result["target_language"], user_intent=parse_result["intent"],
+                    departure_time=ctx["departure_time"], max_range_km=ctx["range_km"],
+                )
+                result = conversation_engine.finish_decision(result, pipeline_output, ctx.get("vessel_display", "fishing boat"))
+                status = result.status
+                errors = [ChatError(**e) for e in result.errors]
+            else:
+                result.reply = "Pipeline execution was disabled for this request."
+                status = "degraded"
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("[%s] ORCA pipeline failed", rid)
+            raise ApiError(502, "pipeline_failed", "The ORCA decision pipeline failed. Please try again; nothing was assumed.")
+
+    ctx_out = parse_result["active_context"] if parse_result else None
+    return ChatResponse(
+        request_id=rid,
+        conversation_id=cid,
+        session_id=cid,
+        user_text=query,
+        assistant_text=result.reply,
+        intent=result.intent,
+        status=status,
+        uses_mock_data=result.uses_mock_data,
+        mock_components=result.mock_components,
+        data_sources=result.data_sources,
+        confidence=result.confidence,
+        follow_up_questions=result.follow_ups,
+        errors=errors,
+        query=query,
+        english_query=(interpretation or {}).get("english_query", query),
+        detected_language=parse_result["detected_language"] if parse_result else None,
+        target_language=parse_result["target_language"] if parse_result else None,
+        pipeline_intent=parse_result["intent"] if parse_result else None,
+        intent_schema=(interpretation or {}).get("intent_schema"),
+        understanding_chips=parse_result["understanding_chips"] if parse_result else None,
+        active_context=ctx_out,
+        pipeline_result=pipeline_output,
+    )
 
 
 @app.get("/api/orca/query", tags=["ORCA 10-Step Pipeline"])
@@ -361,6 +532,7 @@ async def run_orca_pipeline(
     """
     if not MODULES_OK or orca_pipeline_instance is None:
         raise HTTPException(500, detail=f"Modules not loaded: {MODULES_ERROR}")
+    _validate_coordinates(lat, lon)
     try:
         return orca_pipeline_instance.run(
             lat=lat,
@@ -962,13 +1134,12 @@ async def maritime_limits():
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting ORCA Backend Server...")
-    print("API Docs: http://localhost:8000/docs")
-    print("System Status: http://localhost:8000/api/status")
+    port = int(os.getenv("PORT", "8000"))  # Railway injects PORT
+    print(f"Starting ORCA Backend Server on 0.0.0.0:{port}")
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=port,
+        reload=os.getenv("UVICORN_RELOAD", "").lower() in ("1", "true"),
         log_level="info",
     )

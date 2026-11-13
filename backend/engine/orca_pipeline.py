@@ -72,34 +72,51 @@ class OrcaPipeline:
 
         # Extract normalized parameters
         records_map = {r["parameter"]: r["value"] for r in gateway_data["normalized_records"]}
-        wave_h = records_map.get("SIGNIFICANT_WAVE_HEIGHT", 1.2)
-        wind_kmh = records_map.get("WIND_SPEED_10M", 22.0)
-        current_spd = records_map.get("SURFACE_OCEAN_CURRENT_VELOCITY", 0.35)
+        # No silent defaults: None means the live feed was unavailable.
+        wave_h = records_map.get("SIGNIFICANT_WAVE_HEIGHT")
+        wind_kmh = records_map.get("WIND_SPEED_10M")
+        current_spd = records_map.get("SURFACE_OCEAN_CURRENT_VELOCITY")
+        data_integrity = gateway_data.get("data_integrity", {})
+        conditions_live = bool(data_integrity.get("conditions_live"))
 
         # ── Step 6: Reason across Oceanographic & Meteorological States ─────
-        is_cyclone = wind_kmh > 65.0
+        is_cyclone = bool(conditions_live and wind_kmh > 65.0)
         lightning_val = records_map.get("LIGHTNING_FLASH_DENSITY", 0.05)
-        steps_trace.append({"step": 6, "name": "Reasoning", "status": "COMPLETED", "detail": f"Wave {wave_h}m, Wind {wind_kmh}km/h, Current {current_spd}m/s"})
+        if conditions_live:
+            steps_trace.append({"step": 6, "name": "Reasoning", "status": "COMPLETED", "detail": f"Wave {wave_h}m, Wind {wind_kmh}km/h, Current {current_spd}m/s"})
+        else:
+            steps_trace.append({"step": 6, "name": "Reasoning", "status": "DEGRADED", "detail": "Live wave/wind data unavailable - sea state cannot be assessed"})
 
         # ── Step 7: Constrain (Hard Safety Gate) ─────────────────────────────
         # Binary safety evaluation at departure point
-        departure_safety = self.safety_gate.evaluate_safety_constraints(
-            target_lat=lat,
-            target_lon=lon,
-            vessel_type=vessel_type,
-            wave_height_m=wave_h,
-            wind_speed_kmh=wind_kmh,
-            is_cyclone_active=is_cyclone,
-            lightning_density=lightning_val
-        )
-
-        # Split candidate PFZs into safe vs rejected (geofence & vessel rules)
-        safe_pfzs, rejected_pfzs = self.safety_gate.filter_candidate_pfzs(
-            candidate_pfzs=raw_pfzs,
-            vessel_type=vessel_type,
-            wave_height_m=wave_h,
-            wind_speed_kmh=wind_kmh
-        )
+        if conditions_live:
+            departure_safety = self.safety_gate.evaluate_safety_constraints(
+                target_lat=lat,
+                target_lon=lon,
+                vessel_type=vessel_type,
+                wave_height_m=wave_h,
+                wind_speed_kmh=wind_kmh,
+                is_cyclone_active=is_cyclone,
+                lightning_density=lightning_val
+            )
+            # Split candidate PFZs into safe vs rejected (geofence & vessel rules)
+            safe_pfzs, rejected_pfzs = self.safety_gate.filter_candidate_pfzs(
+                candidate_pfzs=raw_pfzs,
+                vessel_type=vessel_type,
+                wave_height_m=wave_h,
+                wind_speed_kmh=wind_kmh
+            )
+        else:
+            # Fail closed: without live wave AND wind data nothing is declared safe.
+            departure_safety = {
+                "is_safe": False,
+                "gate_status": "NOT_EVALUATED_NO_LIVE_DATA",
+                "vessel_profile_applied": vessel_info["name"],
+                "fatal_violations": [],
+                "caution_warnings": [],
+                "decision": "CANNOT_ASSESS_NO_LIVE_DATA",
+            }
+            safe_pfzs, rejected_pfzs = [], []
         steps_trace.append({"step": 7, "name": "Safety Constrained", "status": "COMPLETED", "detail": f"Gate: {departure_safety['gate_status']} | Safe PFZs: {len(safe_pfzs)} | Rejected: {len(rejected_pfzs)}"})
 
         # ── Step 8: Rank Feasible Safe Candidates ────────────────────────────
@@ -118,7 +135,7 @@ class OrcaPipeline:
             ranked_pfz=ranked_pfzs,
             rejected_pfz=rejected_pfzs
         )
-        steps_trace.append({"step": 9, "name": "Verified", "status": "COMPLETED", "detail": "Data provenance and freshness verified (0.91 confidence)"})
+        steps_trace.append({"step": 9, "name": "Verified", "status": "COMPLETED", "detail": "Provenance audited; static reference data flagged as non-live"})
 
         # ── Safest Route Calculation with Obstacle Avoidance (P0) ────────────
         route_info = None
@@ -232,7 +249,12 @@ class OrcaPipeline:
         steps_trace.append({"step": 10, "name": "Advisory Delivered", "status": "COMPLETED", "detail": "Decision package and cartographic layers rendered"})
 
         # Formulate final recommendation verdict
-        if not departure_safety["is_safe"]:
+        if not conditions_live:
+            verdict = "REASSESS"
+            verdict_label = "CANNOT ASSESS (NO LIVE SEA-STATE DATA)"
+            why_text = ("Live wave/wind data is currently unavailable, so I cannot judge whether it is safe to go to sea. "
+                        "Check the official IMD/INCOIS bulletin or the harbour authority before sailing.")
+        elif not departure_safety["is_safe"]:
             verdict = "AVOID"
             verdict_label = "AVOID (STAY ASHORE)"
             why_text = f"Safety Gate Rejection: {departure_safety['fatal_violations'][0]['message'] if departure_safety['fatal_violations'] else 'Unfavorable sea conditions'}"
@@ -253,9 +275,11 @@ class OrcaPipeline:
             "best_zone": top_pfz["name"] if top_pfz else "None",
             "best_zone_id": top_pfz.get("pfz_id") if top_pfz else None,
             "best_window": "05:30 AM – 09:30 AM IST (Optimal Morning Ebb Tide)",
-            "safety_score": 88 if departure_safety["is_safe"] else 22,
+            "safety_score": (88 if departure_safety["is_safe"] else 22) if conditions_live else None,
             "fishing_value": top_pfz["productivity_score"] if top_pfz else 0,
-            "confidence": 0.91,
+            "confidence": 0.6 if conditions_live else 0.0,
+            "confidence_note": "Wave/wind are model forecasts; PFZ and SST/chlorophyll are static reference data." if conditions_live else "No live sea-state data.",
+            "conditions": {"wave_m": wave_h, "wind_kmh": wind_kmh, "current_ms": current_spd},
             "route_km": safe_route_dist,
             "transit_time_hours": round(safe_route_dist / 18.0, 1) if safe_route_dist else 0.0,
             "restricted_intersections": 0,
@@ -271,8 +295,8 @@ class OrcaPipeline:
             "safety_score": decision_package["safety_score"],
             "fishing_score": decision_package["fishing_value"],
             "route_km": decision_package["route_km"],
-            "wave_h": wave_h,
-            "wind_kmh": wind_kmh,
+            "wave_h": wave_h if wave_h is not None else "n/a",
+            "wind_kmh": wind_kmh if wind_kmh is not None else "n/a",
             "vessel": vessel_info["name"],
             "why": why_text
         }
@@ -283,6 +307,11 @@ class OrcaPipeline:
         
         regional_advisory = self.conversation_agent.translate_advisory(decision_meta_for_translation, target_lang)
         english_advisory = self.conversation_agent.translate_advisory(decision_meta_for_translation, "en")
+
+        if not conditions_live:
+            # The templates above describe conditions as "safe"; never emit that without live data.
+            regional_advisory = dict(regional_advisory, body=why_text)
+            english_advisory = dict(english_advisory, body=why_text)
 
         elapsed_ms = round((datetime.now(timezone.utc) - start_time).total_seconds() * 1000, 1)
 
@@ -302,13 +331,14 @@ class OrcaPipeline:
             "situation_metrics": {
                 "recommendation_verdict": verdict_label,
                 "fishing_suitability": "HIGH" if ranked_pfzs else "LOW",
-                "marine_safety": "SAFE" if departure_safety["is_safe"] else "DANGER",
+                "marine_safety": ("SAFE" if departure_safety["is_safe"] else "DANGER") if conditions_live else "UNKNOWN",
                 "restrictions": "RESTRICTED_AREAS_EXCLUDED" if rejected_pfzs else "CLEAR",
                 "best_window": decision_package["best_window"],
                 "safety_score": decision_package["safety_score"],
                 "fishing_value_score": decision_package["fishing_value"],
-                "data_confidence": 0.91
+                "data_confidence": 0.6 if conditions_live else 0.0
             },
+            "data_integrity": data_integrity,
             "hard_safety_gate": departure_safety,
             "candidate_pfz_count": len(raw_pfzs),
             "safe_ranked_pfzs": ranked_pfzs,

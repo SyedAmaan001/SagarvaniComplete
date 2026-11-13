@@ -5,19 +5,15 @@ understanding chip extraction, and Indian-language translation.
 Extensible to all 22 Scheduled Indian Languages.
 """
 
-import os
 import re
 import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone, timedelta
 
 from utils.key_rotation import get_next_gemini_key, get_all_keys
+from utils.gemini import GEMINI_AVAILABLE, generate_text
 
-try:
-    from google import genai as _genai_module
-    GENAI_OK = True
-except ImportError:
-    GENAI_OK = False
+GENAI_OK = GEMINI_AVAILABLE
 
 # ─── Extensible 22 Scheduled Indian Languages Registry ────────────────────────
 INDIAN_LANGUAGES = {
@@ -322,12 +318,7 @@ Output ONLY a JSON object with these keys (use null if not mentioned or unchange
 
         def _call_gemini():
             key = get_next_gemini_key()
-            client = _genai_module.Client(api_key=key)
-            resp = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=prompt
-            )
-            text = resp.text.strip()
+            text = generate_text(key, "gemini-1.5-flash", prompt).strip()
             if text.startswith("```"):
                 text = re.sub(r"^```json\s*", "", text)
                 text = re.sub(r"^```\s*", "", text)

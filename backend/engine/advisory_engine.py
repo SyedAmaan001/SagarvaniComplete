@@ -4,18 +4,12 @@ Generates fisherman-friendly safety advisories using Google Gemini.
 Uses 3-key rotation to avoid per-key rate limits.
 """
 
-import os
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 
-try:
-    from google import genai as _genai_module
-    GENAI_OK = True
-except ImportError:
-    GENAI_OK = False
-
-from utils.key_rotation import get_next_gemini_key
+from utils.key_rotation import get_next_gemini_key, get_all_keys
 from utils.geo_utils import risk_level
+from utils.gemini import GEMINI_AVAILABLE, generate_text
 
 
 # Gemini model to use
@@ -28,12 +22,11 @@ import concurrent.futures
 
 def _get_gemini_client() -> Any:
     """Return a configured google.genai Client using the next key in rotation.
-    Returns None if GENAI_OK is False (import failed).
+    Returns None when no supported SDK or API key is configured.
     """
-    if not GENAI_OK:
+    if not GEMINI_AVAILABLE:
         return None
-    key = get_next_gemini_key()
-    return _genai_module.Client(api_key=key)
+    return get_next_gemini_key()
 
 
 def _call_gemini_with_timeout(client, model: str, prompt: str, timeout_s: float = 5.0) -> str:
@@ -43,7 +36,7 @@ def _call_gemini_with_timeout(client, model: str, prompt: str, timeout_s: float 
     """
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     future = executor.submit(
-        lambda: client.models.generate_content(model=model, contents=prompt).text
+        lambda: generate_text(client, model, prompt)
     )
     try:
         return future.result(timeout=timeout_s)
@@ -115,7 +108,7 @@ Write a safety advisory for Indian fishermen that:
 Keep it under 200 words total. Use simple language that fishermen can understand.
 """
 
-    if not GENAI_OK:
+    if not GEMINI_AVAILABLE or not get_all_keys():
         return {
             "lat": lat, "lon": lon,
             "risk_score": risk_score,
@@ -125,7 +118,7 @@ Keep it under 200 words total. Use simple language that fishermen can understand
             "language": "english",
             "model_used": "rule-based-fallback",
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "error": "google.genai not installed",
+            "error": "No supported Google Gemini SDK or API key is configured",
         }
 
     try:
@@ -212,7 +205,7 @@ Write a weather outlook that includes:
 Format as a professional marine weather bulletin. Keep under 300 words.
 """
 
-    if not GENAI_OK:
+    if not GEMINI_AVAILABLE or not get_all_keys():
         return {
             "zone": zone_name,
             "report_text": "Weather report generation unavailable (google.genai not installed).",

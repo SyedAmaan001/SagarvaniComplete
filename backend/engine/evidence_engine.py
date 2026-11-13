@@ -5,7 +5,7 @@ freshness verification, sensor provenance, and conflict validation metrics.
 """
 
 from typing import Dict, Any, List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 class EvidenceEngine:
     name: str = "Evidence & Provenance Critic"
@@ -21,39 +21,48 @@ class EvidenceEngine:
         Synthesizes authoritative evidence entries with ISO timestamps, latency, and sensor modes.
         """
         now = datetime.now(timezone.utc)
-        incois_time = (now - timedelta(hours=1, minutes=15)).strftime("%Y-%m-%d %H:%M UTC")
-        mosdac_time = (now - timedelta(hours=3, minutes=40)).strftime("%Y-%m-%d %H:%M UTC")
-        imd_time = (now - timedelta(minutes=45)).strftime("%Y-%m-%d %H:%M UTC")
+        integrity = gateway_data.get("data_integrity", {})
+        fetched = gateway_data.get("timestamp", now.isoformat())
+
+        def _live(flag: bool, live_text: str):
+            return live_text if flag else "UNAVAILABLE (no live data)"
 
         evidence_items = [
             {
-                "source": "INCOIS Ocean State Forecast (OSF)",
-                "timestamp": incois_time,
-                "status": "FRESH (Age: 1.2h)",
-                "data_point": "Significant Wave Height & Peak Period Model",
-                "verified": True
+                "source": "Open-Meteo Marine API (model forecast)",
+                "timestamp": fetched,
+                "status": _live(integrity.get("wave_live", False), "FETCHED THIS REQUEST"),
+                "data_point": "Significant wave height",
+                "verified": bool(integrity.get("wave_live", False)),
             },
             {
-                "source": "ISRO MOSDAC EOS-06 (OCM-3 / SCAT-3)",
-                "timestamp": mosdac_time,
-                "status": "VALID (Age: 3.6h)",
-                "data_point": "Ocean Surface Current Vector & Chlorophyll-a Fronts",
-                "verified": True
+                "source": "Open-Meteo Weather API (model forecast)",
+                "timestamp": fetched,
+                "status": _live(integrity.get("wind_live", False), "FETCHED THIS REQUEST"),
+                "data_point": "10 m wind speed",
+                "verified": bool(integrity.get("wind_live", False)),
             },
             {
-                "source": "IMD Marine Weather & Cyclone Bulletin",
-                "timestamp": imd_time,
-                "status": "ACTIVE NOWCAST (Age: 0.7h)",
-                "data_point": "10m Wind Fields, Convective Lightning & Storm Warning",
-                "verified": True
+                "source": "MOSDAC ISRO ocean-current NetCDF (archived file)",
+                "timestamp": "archive file - not real-time",
+                "status": "ARCHIVE" if integrity.get("current_live") else "UNAVAILABLE",
+                "data_point": "Surface current vector",
+                "verified": False,
             },
             {
-                "source": "Bhuvan NRSC LULC & Maritime Geofence Layer",
-                "timestamp": "2024–2025 Release",
-                "status": "AUTHORITATIVE_ANNUAL",
-                "data_point": "Defense Exclusion Ranges, Marine Sanctuaries, 12NM Territorial Baseline",
-                "verified": True
-            }
+                "source": "Static reference registry (PFZ, SST, chlorophyll, lightning, tide)",
+                "timestamp": "n/a",
+                "status": "STATIC - NOT LIVE INCOIS/IMD/ISRO DATA",
+                "data_point": "Potential fishing zones and ocean-colour values",
+                "verified": False,
+            },
+            {
+                "source": "Bhuvan NRSC LULC & Maritime Geofence Layer (reference geofences)",
+                "timestamp": "2024-2025 Release",
+                "status": "REFERENCE",
+                "data_point": "Restricted zones, sanctuaries, territorial baseline",
+                "verified": False,
+            },
         ]
 
         # Reason formulation
@@ -73,10 +82,9 @@ class EvidenceEngine:
         return {
             "evidence_trail": evidence_items,
             "provenance_summary": {
-                "incois_verified": True,
-                "mosdac_verified": True,
-                "imd_verified": True,
-                "overall_data_confidence": 0.94
+                "live_sea_state": bool(integrity.get("conditions_live", False)),
+                "uses_static_reference_data": True,
+                "overall_data_confidence": 0.6 if integrity.get("conditions_live") else 0.0
             },
             "why_this_answer": reasons,
             "generated_at": now.isoformat()

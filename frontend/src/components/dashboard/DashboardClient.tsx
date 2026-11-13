@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
@@ -17,6 +17,7 @@ import {
   PREDEFINED_SCENARIOS 
 } from "@/lib/mock-data/scenario";
 import { queryOrca } from "@/lib/api/orca";
+import { speakIfEnabled, stopSpeech } from "@/lib/speech";
 import { AgentStatusRail } from "./AgentStatusRail";
 import { ReadoutStrip } from "./ReadoutStrip";
 import { ConversationRail } from "./ConversationRail";
@@ -61,6 +62,11 @@ export function DashboardClient() {
   const [activeIntent, setActiveIntent] = useState<string>("");
   const [isContradictionState, setIsContradictionState] = useState(false);
 
+  // One conversation id for the whole page visit so follow-up questions keep context
+  const sessionIdRef = useRef<string>(
+    typeof crypto !== "undefined" && "randomUUID" in crypto ? `web_${crypto.randomUUID()}` : `web_${Date.now()}`
+  );
+
   const [mobileTab, setMobileTab] = useState<'chat' | 'map' | 'agents'>('chat');
 
   // Toggle map layers
@@ -83,6 +89,8 @@ export function DashboardClient() {
     setActiveIntent("");
     setIsContradictionState(false);
     setFocusedCoords([12.9141, 74.8560]);
+    stopSpeech();
+    sessionIdRef.current = `web_${Date.now()}`;
   };
 
   // Run a scenario simulation or query
@@ -150,7 +158,7 @@ export function DashboardClient() {
         setAlerts(scenario.alerts);
         setActiveLayers(scenario.layers);
         setTrace(scenario.recheckingSteps);
-        setTurns(prev => [...prev, scenario.turn]);
+        setTurns(prev => [...prev, { ...scenario.turn, usesMockData: true, mockComponents: ["Scripted demo scenario - illustrative text, not live observations"] }]);
         setIsTyping(false);
         setShowReasoning(true);
       }, 3200);
@@ -163,16 +171,16 @@ export function DashboardClient() {
         setAlerts(scenario.alerts);
         setActiveLayers(scenario.layers);
         setTrace(scenario.recheckingSteps);
-        setTurns(prev => [...prev, scenario.turn]);
+        setTurns(prev => [...prev, { ...scenario.turn, usesMockData: true, mockComponents: ["Scripted demo scenario - illustrative text, not live observations"] }]);
         setIsTyping(false);
         setShowReasoning(true);
       }, 2000);
     }
   };
 
-  // Custom free-form query handler
-  const handleCustomAsk = async (queryText: string) => {
-    const matched = PREDEFINED_SCENARIOS.find(s => 
+  // Custom free-form query handler (typed or spoken)
+  const handleCustomAsk = async (queryText: string, viaVoice = false) => {
+    const matched = !viaVoice && PREDEFINED_SCENARIOS.find(s =>
       queryText.toLowerCase().includes(s.badge.toLowerCase()) ||
       queryText.toLowerCase().includes(s.name.toLowerCase().slice(0, 10))
     );
@@ -182,52 +190,46 @@ export function DashboardClient() {
       return;
     }
 
+    stopSpeech();
     setIsTyping(true);
     setTurns(prev => [...prev, {
       id: `turn-user-${Date.now()}`,
       role: 'user',
       text: queryText,
-      timestamp: "Just now"
+      timestamp: "Just now",
+      viaVoice
     }]);
 
     setAgents(prev => prev.map(a => ({ ...a, state: 'running' })));
 
     try {
-      const result = await queryOrca(queryText);
-      setAgents(result.agent_states);
+      const result = await queryOrca(queryText, sessionIdRef.current);
+      setAgents(result.agent_states ?? initialAgents);
       setTurns(prev => [...prev, result.turn]);
       if (result.readouts && result.readouts.length > 0) {
         setReadouts(result.readouts);
       }
-      if (result.alerts && result.alerts.length > 0) {
-        setAlerts(result.alerts);
-      }
+      setAlerts(result.alerts ?? []);
       if (result.turn.validationTrace) {
         setTrace(result.turn.validationTrace);
+        setShowReasoning(true);
       }
       setIsTyping(false);
-      setShowReasoning(true);
-    } catch {
-      setTimeout(() => {
-        setAgents(prev => prev.map(a => ({ ...a, state: 'validated' })));
-        setTurns(prev => [...prev, {
-          id: `turn-sag-${Date.now()}`,
-          role: 'sagarvani',
-          text: `ORCA has synthesized marine conditions for your query: "${queryText}". Current wave heights off the west coast remain moderate (1.1m - 1.4m) with winds at 12 knots. Always observe localized weather warnings before launching craft.`,
-          evidence: [
-            { source: "INCOIS Coastal Observation", summary: "Wave height: 1.2m, slight sea state." },
-            { source: "IMD Weather Radar", summary: "Clear atmospheric conditions." }
-          ]
-        }]);
-        setTrace([
-          "1. Parsed query context and spatial bounds.",
-          "2. Queried INCOIS wave telemetry & IMD meteorological radar.",
-          "3. Evaluated risk envelope for small-to-medium vessels.",
-          "4. Generated validated decision advisory."
-        ]);
-        setIsTyping(false);
-        setShowReasoning(true);
-      }, 2000);
+      speakIfEnabled(result.turn.text);
+    } catch (e) {
+      // Never fabricate an answer: show the failure and say it out loud.
+      const message = e instanceof Error ? e.message : "Unknown error";
+      const text = `I couldn't get an answer from the Sagarvani backend. ${message}`;
+      setAgents(prev => prev.map(a => ({ ...a, state: 'degraded' })));
+      setTurns(prev => [...prev, {
+        id: `turn-sag-${Date.now()}`,
+        role: 'sagarvani',
+        text,
+        isError: true,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }]);
+      setIsTyping(false);
+      speakIfEnabled("Sorry, I couldn't get an answer right now. Please try again.");
     }
   };
 

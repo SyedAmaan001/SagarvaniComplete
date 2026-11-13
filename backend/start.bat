@@ -13,8 +13,10 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+if "%PORT%"=="" set PORT=8000
+
 REM Create virtual environment if not exists
-if not exist ".venv" (
+if not exist "venv\Scripts\python.exe" if not exist ".venv\Scripts\python.exe" (
     echo [1/4] Creating virtual environment...
     python -m venv .venv
     echo Done.
@@ -24,7 +26,11 @@ if not exist ".venv" (
 
 REM Activate venv
 echo [2/4] Activating virtual environment...
-call .venv\Scripts\activate.bat
+if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+) else (
+    call .venv\Scripts\activate.bat
+)
 
 REM Install dependencies
 echo [3/4] Installing dependencies...
@@ -40,6 +46,6 @@ echo  Health:      http://localhost:8000/api/status
 echo  Risk Zones:  http://localhost:8000/api/risk-zones
 echo ============================================
 echo.
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host 0.0.0.0 --port %PORT%
 
 pause

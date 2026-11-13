@@ -21,8 +21,8 @@ import { MapLayer } from "@/lib/types";
 function MapViewController({ coords, zoom }: { coords?: [number, number]; zoom?: number }) {
   const map = useMap();
   useEffect(() => {
-    if (coords) {
-      map.flyTo(coords, zoom || 9, { duration: 1.2 });
+    if (coords && coords.every(Number.isFinite) && coords[0] >= -90 && coords[0] <= 90 && coords[1] >= -180 && coords[1] <= 180) {
+      map.flyTo(coords, Number.isFinite(zoom) ? zoom || 9 : 9, { duration: 1.2 });
     }
   }, [coords, zoom, map]);
   return null;
@@ -57,6 +57,14 @@ export default function MapCanvas({
   focusedCoordinates,
 }: MapCanvasProps) {
   const [mapReady, setMapReady] = useState(false);
+  const safeCenter = center.every(Number.isFinite) && center[0] >= -90 && center[0] <= 90 && center[1] >= -180 && center[1] <= 180
+    ? center
+    : [13.1, 74.4] as [number, number];
+  const safeFocusedCoordinates = focusedCoordinates && focusedCoordinates.every(Number.isFinite) &&
+    focusedCoordinates[0] >= -90 && focusedCoordinates[0] <= 90 &&
+    focusedCoordinates[1] >= -180 && focusedCoordinates[1] <= 180
+    ? focusedCoordinates
+    : undefined;
 
   useEffect(() => {
     setMapReady(true);
@@ -74,12 +82,12 @@ export default function MapCanvas({
   return (
     <div className="relative w-full h-full bg-bg-sunken z-0 select-none">
       <MapContainer
-        center={focusedCoordinates || center}
+        center={safeFocusedCoordinates || safeCenter}
         zoom={zoom}
         style={{ width: "100%", height: "100%", background: "#02051C" }}
         zoomControl={false}
       >
-        <MapViewController coords={focusedCoordinates} zoom={zoom} />
+        <MapViewController coords={safeFocusedCoordinates} zoom={zoom} />
         <ZoomControl position="bottomright" />
 
         {/* Dark basemap — ESRI World Dark Gray (free, no API key required) */}

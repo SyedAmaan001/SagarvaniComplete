@@ -183,9 +183,18 @@ class MarineDataGateway:
         weather_curr = forecast.get("weather", {})
         marine_curr = forecast.get("marine", {})
 
-        wave_h = marine_curr.get("wave_height_m", 1.2) or 1.2
-        wind_kmh = weather_curr.get("wind_speed_kmh", 22.0) or 22.0
-        current_spd = curr_mosdac.get("speed_ms", 0.35) or 0.35
+        # Live values stay None when the provider failed. Previously they were
+        # silently replaced with 1.2 m / 22 km/h, which let the safety gate
+        # approve departures on invented data.
+        wave_h = marine_curr.get("wave_height_m")
+        wind_kmh = weather_curr.get("wind_speed_kmh")
+        current_spd = curr_mosdac.get("speed_ms")
+        wave_live = wave_h is not None and not forecast.get("marine_error")
+        wind_live = wind_kmh is not None and not forecast.get("weather_error")
+        current_live = current_spd is not None and "error" not in curr_mosdac
+        wave_h = wave_h if wave_live else None
+        wind_kmh = wind_kmh if wind_live else None
+        current_spd = current_spd if current_live else None
 
         # 2. Build Internal Canonical Records
         records = [
@@ -196,9 +205,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "INCOIS Ocean State Forecast / Open-Meteo Marine",
-                "mode": "FORECAST",
-                "quality": "VERIFIED_HIGH"
+                "source": "Open-Meteo Marine API" if wave_live else "UNAVAILABLE",
+                "mode": "FORECAST" if wave_live else "UNAVAILABLE",
+                "quality": "MODEL_FORECAST" if wave_live else "UNAVAILABLE"
             },
             {
                 "parameter": "SURFACE_OCEAN_CURRENT_VELOCITY",
@@ -207,9 +216,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "MOSDAC ISRO_CURRENT_TOT NetCDF4",
-                "mode": "OBSERVED_SATELLITE",
-                "quality": "CALIBRATED"
+                "source": "MOSDAC ISRO_CURRENT_TOT NetCDF4 (archived file)" if current_live else "UNAVAILABLE",
+                "mode": "ARCHIVED_SATELLITE" if current_live else "UNAVAILABLE",
+                "quality": "ARCHIVE_NOT_REALTIME" if current_live else "UNAVAILABLE"
             },
             {
                 "parameter": "WIND_SPEED_10M",
@@ -218,9 +227,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "IMD / Open-Meteo Atmospheric Model",
-                "mode": "FORECAST",
-                "quality": "VERIFIED_HIGH"
+                "source": "Open-Meteo Weather API" if wind_live else "UNAVAILABLE",
+                "mode": "FORECAST" if wind_live else "UNAVAILABLE",
+                "quality": "MODEL_FORECAST" if wind_live else "UNAVAILABLE"
             },
             {
                 "parameter": "SEA_SURFACE_TEMPERATURE",
@@ -229,9 +238,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "MOSDAC Oceansat-3 EOS-06 / CMEMS",
-                "mode": "SATELLITE_L4",
-                "quality": "OPTIMAL"
+                "source": "STATIC REFERENCE VALUE (not a live observation)",
+                "mode": "STATIC_REFERENCE",
+                "quality": "NOT_LIVE"
             },
             {
                 "parameter": "CHLOROPHYLL_A_CONCENTRATION",
@@ -240,9 +249,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "ISRO EOS-06 Ocean Colour Monitor (OCM-3)",
-                "mode": "SATELLITE_L3",
-                "quality": "CLOUD_FILTERED"
+                "source": "STATIC REFERENCE VALUE (not a live observation)",
+                "mode": "STATIC_REFERENCE",
+                "quality": "NOT_LIVE"
             },
             {
                 "parameter": "LIGHTNING_FLASH_DENSITY",
@@ -251,9 +260,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "IMD Lightning Warning Radar",
-                "mode": "NOWCAST",
-                "quality": "NOMINAL"
+                "source": "STATIC REFERENCE VALUE (not a live observation)",
+                "mode": "STATIC_REFERENCE",
+                "quality": "NOT_LIVE"
             },
             {
                 "parameter": "ASTRONOMICAL_TIDE_HEIGHT",
@@ -262,9 +271,9 @@ class MarineDataGateway:
                 "latitude": lat,
                 "longitude": lon,
                 "valid_time": now_iso,
-                "source": "INCOIS Tide Gauge Network",
-                "mode": "HYDRODYNAMIC_PREDICTION",
-                "quality": "PRECISE"
+                "source": "STATIC REFERENCE VALUE (not a live observation)",
+                "mode": "STATIC_REFERENCE",
+                "quality": "NOT_LIVE"
             }
         ]
 
@@ -275,10 +284,27 @@ class MarineDataGateway:
             "records_count": len(records),
             "normalized_records": records,
             "provenance": {
-                "incois_status": "ACTIVE_ONLINE",
-                "mosdac_status": "DATA_ARCHIVE_LOADED",
-                "imd_status": "SYNOPTIC_BULLETIN_OK",
-                "erddap_status": "MACHINE_READABLE_STREAMING"
+                "open_meteo_marine": "LIVE" if wave_live else "UNAVAILABLE",
+                "open_meteo_weather": "LIVE" if wind_live else "UNAVAILABLE",
+                "mosdac_currents": "ARCHIVE_FILE" if current_live else "UNAVAILABLE",
+                "incois_pfz": "NOT_INTEGRATED_STATIC_REGISTRY",
+                "imd_lightning": "NOT_INTEGRATED_STATIC_VALUE",
+            },
+            "data_integrity": {
+                "wave_live": bool(wave_live),
+                "wind_live": bool(wind_live),
+                "current_live": bool(current_live),
+                "conditions_live": bool(wave_live and wind_live),
+                "static_parameters": [
+                    "SEA_SURFACE_TEMPERATURE", "CHLOROPHYLL_A_CONCENTRATION",
+                    "LIGHTNING_FLASH_DENSITY", "ASTRONOMICAL_TIDE_HEIGHT",
+                ],
+                "pfz_source": "STATIC_REFERENCE_REGISTRY",
+                "uses_mock_data": True,  # PFZ registry + SST/Chl/lightning/tide are static
+                "mock_components": [
+                    "Potential Fishing Zones (static registry, not live INCOIS)",
+                    "SST, chlorophyll, lightning density, tide height (static values)",
+                ],
             }
         }
 

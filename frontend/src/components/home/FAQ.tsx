@@ -40,10 +40,6 @@ export function FAQ() {
     {
       q: "Does Sagarvani replace official authorities?",
       a: "No. It is a decision-support platform designed to synthesize evidence and explain recommendations. Official warnings and authorities (such as IMD cyclone bulletins and INCOIS high-wave advisories) remain essential sources of operational truth."
-    },
-    {
-      q: "What problem statement is it built for?",
-      a: "Smart India Hackathon 2026, SIH26176 — ORCA: Marine Ecosystem Reasoning with Collaborative Agents, under the Disaster Management theme / Software category, developed by Team Helios Luna (Dayananda Sagar University)."
     }
   ];
 

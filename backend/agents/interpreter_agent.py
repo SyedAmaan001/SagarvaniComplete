@@ -21,6 +21,7 @@ import wave
 from typing import Optional, Dict, Any, Tuple
 import requests
 from pydantic import BaseModel, Field
+from utils.config import get_key_pool
 
 # --------------------------------------------------------------------------
 # 1. CONFIGURATION & MODEL REGISTRY
@@ -31,8 +32,8 @@ SARVAM_STT_TRANSLATE_URL = "https://api.sarvam.ai/speech-to-text-translate"
 SARVAM_TRANSLATE_MODEL = "mayura:v1"
 SARVAM_STT_MODEL = "saaras:v3"
 
-SARVAM_API_KEY_RAW = os.environ.get("SARVAM_API_KEY", "")
-GOOGLE_API_KEY_RAW = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY_1", "")
+SARVAM_API_KEY_RAW = ",".join(get_key_pool("SARVAM_API_KEY"))
+GOOGLE_API_KEY_RAW = ",".join(get_key_pool("GEMINI_API_KEY", aliases=("GOOGLE_API_KEY",)))
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
 
@@ -101,6 +102,10 @@ def translate_to_english(text: str) -> Tuple[str, dict]:
     Supports automatic fallback rotation across available Sarvam API keys.
     """
     char_count = len(text)
+    if text.isascii():
+        # Latin-script input is already English (or transliterated); translating it
+        # only risks corrupting names such as "Sagarvani".
+        return text, {"model": SARVAM_TRANSLATE_MODEL, "chars": char_count, "status": "skipped_english_input"}
     if not sarvam_key_rotator.current_key:
         return text, {"model": SARVAM_TRANSLATE_MODEL, "chars": char_count, "status": "skipped_no_key"}
 
@@ -137,7 +142,11 @@ def translate_to_english(text: str) -> Tuple[str, dict]:
 # 4. SARVAM AI - SPEECH-TO-TEXT-TRANSLATE (for microphone voice input)
 # --------------------------------------------------------------------------
 
-def transcribe_and_translate_audio(audio_bytes: bytes, filename: str = "recording.wav") -> Tuple[Optional[str], dict]:
+def transcribe_and_translate_audio(
+    audio_bytes: bytes,
+    filename: str = "recording.wav",
+    content_type: str = "audio/wav",
+) -> Tuple[Optional[str], dict]:
     """
     Send recorded audio in any Indian regional language to Sarvam AI's
     speech-to-text-translate endpoint (model: saaras:v3).
@@ -154,7 +163,7 @@ def transcribe_and_translate_audio(audio_bytes: bytes, filename: str = "recordin
             "api-subscription-key": sarvam_key_rotator.current_key,
         }
         files = {
-            "file": (filename, audio_bytes, "audio/wav"),
+            "file": (filename, audio_bytes, content_type or "audio/wav"),
         }
         data = {
             "model": SARVAM_STT_MODEL,
@@ -358,7 +367,8 @@ class InterpreterModule:
         """Transcribe and interpret raw microphone audio from user."""
         transcript, stt_stats = transcribe_and_translate_audio(audio_bytes, filename)
         if not transcript:
-            transcript = "Can I safely go fishing tomorrow morning from Malpe?"
+            # Never invent a question the user did not ask.
+            raise RuntimeError(f"Speech-to-text produced no transcript ({stt_stats.get('status')})")
         interpretation = self.interpret(transcript)
         interpretation["stt_stats"] = stt_stats
         return interpretation

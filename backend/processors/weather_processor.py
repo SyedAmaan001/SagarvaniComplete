@@ -39,6 +39,9 @@ def get_weather_forecast(lat: float, lon: float) -> Dict[str, Any]:
         ],
         "forecast_days": 3,
         "timezone": "Asia/Kolkata",
+        # _ms_to_kmh() below converts m/s -> km/h; Open-Meteo defaults to km/h,
+        # which previously inflated every wind value by 3.6x.
+        "wind_speed_unit": "ms",
     }
 
     try:
@@ -105,8 +108,10 @@ def get_marine_forecast(lat: float, lon: float) -> Dict[str, Any]:
         data = resp.json()
         current = data.get("current", {})
 
-        wh = current.get("wave_height", 0) or 0
-        swh = current.get("swell_wave_height", 0) or 0
+        # Keep None when the provider returns no value: a missing wave height
+        # must never be reported as 0 m (calm sea).
+        wh = current.get("wave_height")
+        swh = current.get("swell_wave_height")
 
         return {
             "lat": lat,
@@ -123,7 +128,7 @@ def get_marine_forecast(lat: float, lon: float) -> Dict[str, Any]:
                 "swell_wave_direction_deg": current.get("swell_wave_direction"),
                 "ocean_current_velocity_ms": current.get("ocean_current_velocity"),
                 "ocean_current_direction_deg": current.get("ocean_current_direction"),
-                "sea_state": _sea_state(wh),
+                "sea_state": _sea_state(wh) if wh is not None else "Unknown",
             },
             "hourly_forecast": _build_marine_hourly(data.get("hourly", {})),
         }
