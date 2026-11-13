@@ -217,4 +217,4 @@ Create a feature branch, make your changes with tests, and open a Pull Request.
 
 ## 📄 License
 
-Intended to be distributed under the MIT License; see `LICENSE` once added.
+Released under the [MIT License](LICENSE).
