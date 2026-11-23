@@ -1,0 +1,15 @@
+================================================================
+SagarVaani manuscript — mechanical checks
+================================================================
+  PASS  all 11 cited keys exist in references.bib
+  PASS  all 11 bib entries are cited
+  PASS  all 10 refs resolve to one of 10 labels
+  PASS  figures: 0 external image(s); inline TikZ figures used otherwise
+  PASS  braces balanced (264 pairs)
+  PASS  all LaTeX environments open/close correctly
+  PASS  no author/affiliation/placeholder residue in body text
+  PASS  all 11 bib DOIs appear in the Crossref-verified log
+  PASS  empirical numbers used in tex (62, 85, 23, 820, 3.13.6, 8.3) all trace to experimental_log.md
+  PASS  no 'outperforms/SOTA' comparative claims present
+----------------------------------------------------------------
+  10 passed, 0 warnings, 0 failures

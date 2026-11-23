@@ -1,0 +1,6 @@
+# Captured 2026-11-23 | repo HEAD 40269b8 | Python 3.13.6 | backend/venv
+  C:\Users\syeda\Desktop\PROJECTS\Sagrvani Complete\backend\main.py:875: FastAPIDeprecationWarning: `example` has been deprecated, please use `examples` instead
+    lon: float = Query(..., example=72.0),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+62 passed, 21 warnings in 12.08s
