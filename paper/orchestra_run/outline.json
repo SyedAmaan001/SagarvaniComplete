@@ -1,0 +1,81 @@
+{
+  "paper": {
+    "working_title": "SagarVaani: Fail-Closed Evidence Gating and Bounded Recovery for Marine and Coastal Advisories",
+    "framing": "design + honest status (architecture is a design/specification contribution; reviewed repo is a partially-implemented prototype)",
+    "venue": "IEEE CONECCT 2027, Bangalore",
+    "template": "\\documentclass[conference]{IEEEtran}",
+    "page_budget": "6 pages including references (double column)",
+    "authors": [
+      {"name": "Syed Amaan", "email": "syedamaan1610@gmail.com", "affiliation": "Dayananda Sagar University, Bengaluru, India"},
+      {"name": "Mallikarjuna D M", "email": "dmmallikarjuna52@gmail.com", "affiliation": "Dayananda Sagar University, Bengaluru, India"}
+    ],
+    "base_paper": "Sun, Huang, Pompili 2025, IEEE RA-L, 10.1109/lra.2025.3562371",
+    "related_work_anchors": ["Hendrickx 2024 (10.1007/s10994-024-06534-x)", "Gawlikowski 2023 (10.1007/s10462-023-10562-9)"]
+  },
+  "honesty_rules": [
+    "No measured number enters the paper unless it has an experimental_log.md entry.",
+    "The three-valued policy, closed-list recovery, fingerprinting, guarded state machine are presented as DESIGN, not as implemented/measured.",
+    "No claim that SagarVaani outperforms any cited work (no head-to-head experiment exists).",
+    "Prior-art patents and arXiv preprints are NOT labelled Crossref-verified; cite patents only if venue allows and in a separate list.",
+    "The only real empirical results are the 62-passing pytest suite and code-verifiable fail-closed-on-missing-data behaviour."
+  ],
+  "figure_plan": [
+    {"id": "fig:arch", "title": "Fail-closed, evidence-gated release architecture", "type": "DESIGN", "source": "author-drawn TikZ from idea_sparse.md + spec; original artwork, not copied", "placement": "Section Methodology (top of column)"},
+    {"id": "fig:workflow", "title": "Three-valued release determination and bounded allow-list recovery", "type": "DESIGN", "source": "author-drawn TikZ state/flow diagram", "placement": "Section Methodology"},
+    {"id": "fig:prototype", "title": "Implemented ORCA 10-step prototype pipeline (what is real today)", "type": "VERIFIED", "source": "author-drawn from orca_pipeline.py step trace", "placement": "Section Implementation", "note": "optional if page budget allows; else fold into a table"}
+  ],
+  "table_plan": [
+    {"id": "tab:verdict", "title": "Three-valued verdict derivation rule", "type": "DESIGN", "content": "BLOCK if any BLOCK; else NOT_EVALUABLE if any NOT_EVALUABLE; else PASS iff all PASS"},
+    {"id": "tab:status", "title": "Implementation status: design vs reviewed prototype", "type": "VERIFIED", "content": "per-component implemented/partial/design-only, mapped to files", "source": "idea_sparse.md"},
+    {"id": "tab:tests", "title": "Prototype test-suite coverage", "type": "VERIFIED", "content": "62 tests across 5 files (conversation 23, voice 13, health/config 14, sessions/pipeline 10, full-voice 2)", "source": "experimental_log.md E1/E2"}
+  ],
+  "introduction_strategy": {
+    "hook": "In marine safety, absence of a warning is itself a message; a generative advisory that stays fluent when evidence is missing converts a data failure into an apparent assurance of safety.",
+    "problem": "Score/consensus-based agent controls measure agreement, not whether a mandatory safety check could be evaluated at all.",
+    "gap": "No release primitive for 'input unavailable -> withhold' that is distinct from pass/block and independent of the model.",
+    "approach_one_liner": "A deterministic, three-valued, fail-closed release interlock with bounded closed-list recovery and auditable abstention, layered over a multi-agent marine-advisory prototype.",
+    "honesty_sentence": "We present the interlock as a design and report the status of a partial prototype; we do not claim measured safety improvements.",
+    "numbered_contributions": [
+      "A three-valued (PASS/BLOCK/NOT_EVALUABLE) release policy with a fixed, model-independent derivation where NOT_EVALUABLE encodes input unavailability and prevents release.",
+      "A deterministic release interlock decoupled from the agents/LLM selector (selector proposes recovery, never decides).",
+      "Bounded closed-list recovery with gap fingerprinting for no-progress termination (finite budget + deadline), ending in auditable abstention rather than a synthesised advisory.",
+      "A guarded state machine + audit store design (checksummed artefacts), and an honest implementation-status account validated by a 62-test prototype that already enforces fail-closed-on-missing-data."
+    ]
+  },
+  "related_work_clusters": [
+    {"name": "Multi-agent (LLM) decision-making", "anchor": "Sun 2025 (base)", "angle": "agents decide via cooperation/consensus/confidence; SagarVaani removes the release decision from the agents", "to_add": "2-3 more verified refs on multi-agent orchestration/verification"},
+    {"name": "Abstention / reject option / selective prediction", "anchor": "Hendrickx 2024", "angle": "reject on model confidence/cost vs NOT_EVALUABLE on evidence availability", "to_add": "1-2 verified refs on selective classification"},
+    {"name": "Uncertainty-aware & trustworthy AI, provenance/audit", "anchor": "Gawlikowski 2023", "angle": "quantify uncertainty vs check evidence adequacy; plus provenance/audit trail", "to_add": "1-2 verified refs on uncertainty/provenance; marine decision-support ref if a verified one is found"}
+  ],
+  "section_plan": [
+    {"section": "Abstract", "budget": "<=200 words (tight for 6pp)", "must_include": ["problem", "design contribution", "honest status: not yet implemented/measured", "prototype 62 tests + fail-closed"]},
+    {"section": "I. Introduction", "budget": "~0.9 col", "content": ["hook", "problem", "gap", "approach", "explicit honesty sentence", "numbered contributions C1-C4"]},
+    {"section": "II. Related Work", "budget": "~0.8 col", "content": ["3 clusters above", "fair description of Sun 2025 incl. its contributions and limitations", "how SagarVaani differs"], "cite_only": "verified keys"},
+    {"section": "III. System Model and Methodology", "budget": "~1.6 col (core)", "content": ["evidence record model", "validator checks (design)", "three-valued release policy + derivation (eq.)", "recovery controller + fingerprint (eq.)", "guarded state machine", "fig:arch, fig:workflow, tab:verdict"], "equations": ["verdict derivation", "fingerprint = H(canonical(gapcodes))", "no-progress termination condition"]},
+    {"section": "IV. Implementation", "budget": "~0.8 col", "content": ["reviewed ORCA prototype: pipeline, binary gate, confidence-averaging validator, honest-data labelling", "FastAPI/Next.js, ~8.3k LoC backend", "tab:status design-vs-implemented", "explicit: which design parts are NOT implemented"]},
+    {"section": "V. Experiments and Evaluation", "budget": "~0.8 col", "content": ["E1 62 tests pass (env, reproducible)", "E2 coverage table tab:tests", "A1 fail-closed-on-missing-data demonstrated", "explicit statement: release-architecture experiments not run because not implemented (no fabrication)"], "no_numbers_without": "experimental_log.md entry"},
+    {"section": "VI. Limitations and Threats to Validity", "budget": "~0.5 col", "content": ["architecture unimplemented -> no perf claims", "static vs live data", "PASS unreachable by design pending integrations", "construct/internal/external validity", "single-region prototype"]},
+    {"section": "VII. Conclusion and Future Work", "budget": "~0.35 col", "content": ["recap design contribution + honest status", "future: implement policy/recovery/state-machine, integrate official feeds, run injected-failure evaluation"]},
+    {"section": "References", "budget": "~0.8 col", "content": ["verified DOI refs only; expand to ~12-18 verified during drafting; patents/arXiv separate or omitted per venue"]}
+  ],
+  "data_source_pointers": {
+    "idea": "paper/raw_materials/idea_sparse.md",
+    "numbers": "paper/raw_materials/experimental_log.md",
+    "raw_outputs": "paper/raw_materials/raw_outputs/E1_pytest_run.txt, E2_test_inventory.txt",
+    "citations": "paper/raw_materials/citation_verification_log.md",
+    "base_paper": "paper/raw_materials/base_paper_card.md",
+    "code_evidence": {
+      "pipeline": "backend/engine/orca_pipeline.py",
+      "safety_gate": "backend/engine/safety_gate.py",
+      "validator": "backend/agents/validator.py",
+      "evidence_engine": "backend/engine/evidence_engine.py"
+    }
+  },
+  "open_tasks_before_submission": [
+    "Expand references.bib to ~12-18 verified entries (Crossref) for Intro + Related Work.",
+    "Author the TikZ figures (fig:arch, fig:workflow).",
+    "Confirm CONECCT 2027 exact page limit + IEEEtran settings on official CFP.",
+    "Decide whether to cite prior-art patents (separate list) per CONECCT rules.",
+    "Run mechanical checks + compile + page-render review."
+  ]
+}

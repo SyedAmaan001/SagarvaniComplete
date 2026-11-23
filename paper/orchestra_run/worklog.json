@@ -1,0 +1,43 @@
+{
+  "disclaimer": "This is a PaperOrchestra-method draft prepared by Claude as an AI assistant and must be reviewed and approved by the human authors.",
+  "project": "SagarVaani IEEE conference paper",
+  "framing": "implemented + evaluated (full scope; the user chose not to narrow scope)",
+  "venue": "IEEE CONECCT 2027, Bangalore (page limit 6 incl. references)",
+  "date": "2026-11-23",
+  "pipeline": [
+    {"stage": "audit", "action": "Read both DOCX sources; read-only repo audit.", "key_finding": "The fail-closed architecture was initially design-only (ORCA prototype implemented instead)."},
+    {"stage": "base_paper", "action": "Crossref-verified candidates; human selected Sun et al. 2025 (IEEE RA-L)."},
+    {"stage": "raw_materials", "action": "idea_sparse.md, experimental_log.md, base_paper_card.md, citation_verification_log.md."},
+    {"stage": "A_outline", "action": "orchestra_run/outline.json."},
+    {"stage": "B_literature", "action": "Introduction + Related Work using 11 Crossref-verified keys."},
+    {"stage": "C_sections", "action": "Full template.tex with verdict/fingerprint/termination equations and two original TikZ figures."},
+    {"stage": "IMPLEMENTATION", "action": "Implemented the full architecture in backend/release/ (~820 LoC): model, validator, policy (three-valued derivation), state_machine (transition table; RELEASED only from SAFETY_GATE_CHECK), recovery (closed list, SHA-256 gap fingerprint, budget+deadline, no-progress stop), audit (checksums), engine. Pure standard library, deterministic."},
+    {"stage": "EVALUATION", "action": "Wrote backend/release/experiments.py (12 scenarios) and backend/tests/test_release_architecture.py (23 tests). Ran both: 12/12 experiments produce expected outcomes; full backend suite 85/85 passing."},
+    {"stage": "REWRITE", "action": "Rewrote paper abstract/Implementation/Experiments/Limitations/Conclusion and tables to 'implemented + measured'. Recompiled (Tectonic), 4 pages, mechanical_checks.py 10/10."},
+    {"stage": "D_refinement", "action": "Updated reviewer_feedback.json, experimental_log.md (E4-E6), idea_sparse.md, figure_register.md, PAPER_PREP.md."}
+  ],
+  "empirical_numbers_used": [
+    {"value": "85 of 85 backend tests passing (62 prototype + 23 new release tests)", "source": "experimental_log.md E5", "type": "measured"},
+    {"value": "12 release-architecture experiments, all expected outcomes", "source": "experimental_log.md E4 + raw_outputs/E4_release_experiments.json", "type": "measured"},
+    {"value": "~820 LoC release module", "source": "experimental_log.md E6", "type": "counted"},
+    {"value": "B=2 budget; no-progress stop at cycle 1; audit 6/4/2", "source": "experimental_log.md E4", "type": "measured"},
+    {"value": "Python 3.13.6; offline, no keys", "source": "environment", "type": "recorded"}
+  ],
+  "explicitly_not_claimed": [
+    "No field study / no live-feed deployment (mandatory-check inputs are configurable reference inputs).",
+    "No real-world accident-reduction or safety-outcome claim.",
+    "No head-to-head accuracy comparison against any cited system.",
+    "Evaluation is behavioural/offline on deterministic fixtures."
+  ],
+  "deliverables": [
+    "paper/SagarVaani_IEEE_paper.pdf",
+    "paper/templates/ieee_conference/{template.tex,references.bib,guidelines.md}",
+    "paper/raw_materials/{idea_sparse,experimental_log,base_paper_card,citation_verification_log,figure_register}.md",
+    "paper/raw_materials/raw_outputs/{E1,E2,E5}_*.txt, E4_release_experiments.json",
+    "paper/orchestra_run/{outline,reviewer_feedback,worklog}.json",
+    "paper/{mechanical_checks.py,mechanical_check_output.txt}",
+    "docs/PAPER_PREP.md",
+    "backend/release/ (implementation), backend/tests/test_release_architecture.py"
+  ],
+  "human_action_required": true
+}

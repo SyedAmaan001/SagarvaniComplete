@@ -1,0 +1,22 @@
+{
+  "artifact": "paper/SagarVaani_IEEE_paper.pdf (source: templates/ieee_conference/template.tex) + backend/release/",
+  "review_date": "2026-11-23",
+  "reviewer": "Claude (content_refinement_agent role) — AI self-review, NOT a human peer review",
+  "method": "Re-checked every numerical value, citation, implementation claim, and figure against the implemented code, the experiment outputs, and the raw materials.",
+  "verdict": "Claims now match implemented, executed code; results reproduced; internally consistent and honest. Human review still required before submission.",
+  "checks": [
+    {"item": "Implementation claims", "finding": "Every component in Table I exists in backend/release/ with the stated line counts (model 116, validator 196, policy 138, state_machine 56, recovery 128, audit 68, engine 118; core 820). Verified by wc -l.", "status": "PASS"},
+    {"item": "Experiment results", "finding": "All 12 experiments in Table II reproduce via `python -m release.experiments`; outputs in raw_outputs/E4_release_experiments.json match the table (pass->released, block, NOT_EVALUABLE->abstained, precedence, recovery 1 cycle, budget 2 cycles, no-progress cycle 1, deadline, rejection, state-machine refusal, audit 6/4/2).", "status": "PASS"},
+    {"item": "Test count", "finding": "`python -m pytest` reports 85 passed (62 prototype + 23 new release tests). Matches abstract/§V. Raw: raw_outputs/E5_pytest_full.txt.", "status": "PASS"},
+    {"item": "Citations", "finding": "11 references, all Crossref-verified; every cite resolves, every entry cited (mechanical_checks.py 10/10).", "status": "PASS"},
+    {"item": "No overclaiming", "finding": "Paper states the evaluation is behavioural/offline on reference inputs, makes no field-study or accuracy-comparison claim, and no 'outperforms/SOTA' language. Limitations are explicit.", "status": "PASS"},
+    {"item": "Figures", "finding": "Fig.1/Fig.2 are original TikZ; '(design)' removed now that the architecture is implemented; both referenced; no figure number in caption text.", "status": "PASS"},
+    {"item": "Honesty of 'PASS reachable'", "finding": "Paper and code agree: PASS is reachable only when the three mandatory-check inputs (reference/configurable) are all provided and satisfied; a missing input yields NOT_EVALUABLE.", "status": "PASS"}
+  ],
+  "open_items_for_human_authors": [
+    "Confirm IEEE CONECCT 2027 exact page limit and camera-ready IEEEtran settings.",
+    "Decide whether to cite prior-art patents (separate list) per CONECCT rules; currently omitted.",
+    "Consider adding a live-feed integration + field-evaluation section once available (currently future work).",
+    "Author review of all technical claims, the author/affiliation block, and the code before submission."
+  ]
+}

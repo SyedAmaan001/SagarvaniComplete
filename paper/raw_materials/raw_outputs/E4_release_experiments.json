@@ -1,0 +1,122 @@
+[
+  {
+    "experiment": "E-PASS: all mandatory checks pass -> RELEASED",
+    "verdict": "PASS",
+    "state": "released",
+    "released": true,
+    "expect": {
+      "verdict": "PASS",
+      "state": "released",
+      "released": true
+    }
+  },
+  {
+    "experiment": "E-BLOCK: active official warning -> BLOCKED",
+    "verdict": "BLOCK",
+    "state": "blocked",
+    "released": false,
+    "expect": {
+      "verdict": "BLOCK",
+      "state": "blocked",
+      "released": false
+    }
+  },
+  {
+    "experiment": "E-BLOCK2: wave exceeds vessel limit -> BLOCKED",
+    "verdict": "BLOCK",
+    "state": "blocked",
+    "released": false,
+    "expect": {
+      "verdict": "BLOCK",
+      "released": false
+    }
+  },
+  {
+    "experiment": "E-NE: unavailable warning feed -> NOT_EVALUABLE, ABSTAINED",
+    "verdict": "NOT_EVALUABLE",
+    "state": "abstained",
+    "released": false,
+    "expect": {
+      "verdict": "NOT_EVALUABLE",
+      "state": "abstained",
+      "released": false
+    }
+  },
+  {
+    "experiment": "E-PREC: BLOCK + NOT_EVALUABLE -> BLOCK precedence",
+    "verdict": "BLOCK",
+    "released": false,
+    "expect": {
+      "verdict": "BLOCK",
+      "released": false
+    }
+  },
+  {
+    "experiment": "E-REC: addressable gap repaired by sanctioned action -> RELEASED",
+    "verdict": "PASS",
+    "state": "released",
+    "released": true,
+    "recovery": "succeeded",
+    "cycles": 1,
+    "expect": {
+      "verdict": "PASS",
+      "released": true,
+      "recovery": "succeeded"
+    }
+  },
+  {
+    "experiment": "E-BUDGET: recovery budget exhausted -> abstain",
+    "status": "exhausted_budget",
+    "cycles": 2,
+    "expect": {
+      "status": "exhausted_budget",
+      "cycles": 2
+    }
+  },
+  {
+    "experiment": "E-NOPROG: repeated gap fingerprint -> no_progress before budget",
+    "status": "no_progress",
+    "cycles": 1,
+    "expect": {
+      "status": "no_progress"
+    }
+  },
+  {
+    "experiment": "E-DEADLINE: deadline exceeded -> abstain",
+    "status": "exhausted_deadline",
+    "expect": {
+      "status": "exhausted_deadline"
+    }
+  },
+  {
+    "experiment": "E-REJECT: out-of-list model proposal rejected, rule-based used",
+    "raw_action": "frobnicate_everything",
+    "action": "retry_with_backoff",
+    "valid": false,
+    "selector_type": "model->rules",
+    "expect": {
+      "valid": false,
+      "action_in_closed_list": true
+    }
+  },
+  {
+    "experiment": "E-GUARD: release attempt without PASS is refused by the state machine",
+    "refused": true,
+    "state": "evidence_validation",
+    "expect": {
+      "refused": true,
+      "state": "evidence_validation"
+    }
+  },
+  {
+    "experiment": "E-AUDIT: run produces a complete, checksummed audit record",
+    "is_complete": true,
+    "n_transitions": 6,
+    "n_checks": 4,
+    "n_artifacts": 2,
+    "all_checksummed": true,
+    "expect": {
+      "is_complete": true
+    }
+  }
+]
